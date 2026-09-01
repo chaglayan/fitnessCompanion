@@ -22,6 +22,7 @@ interface ExerciseSeed {
   difficulty?: 1 | 2 | 3;
   stresses?: InjuryArea[];
   restSec?: number;
+  staple?: boolean;
   /** Overrides the default "<name> proper form" YouTube search query. */
   video?: string;
   loadFactor?: number;
@@ -43,6 +44,7 @@ function ex(seed: ExerciseSeed): Exercise {
     restSec: seed.restSec ?? 90,
     description: seed.description,
     cues: seed.cues,
+    staple: seed.staple ?? false,
     video: { query: seed.video ?? `${seed.name} proper form technique` },
     ...(seed.loadFactor === undefined ? {} : { loadFactor: seed.loadFactor }),
   };
@@ -64,6 +66,7 @@ export const EXERCISES: Exercise[] = [
   /* ---------------------------- SQUAT ---------------------------- */
   ex({
     id: "bw_squat",
+    staple: true,
     name: "Bodyweight Squat",
     aliases: ["air squat"],
     pattern: "squat",
@@ -82,6 +85,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "goblet_squat",
+    staple: true,
     name: "Goblet Squat",
     pattern: "squat",
     equipment: ["dumbbell"],
@@ -100,6 +104,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "back_squat",
+    staple: true,
     name: "Barbell Back Squat",
     aliases: ["back squat", "squat"],
     pattern: "squat",
@@ -218,9 +223,10 @@ export const EXERCISES: Exercise[] = [
   /* ---------------------------- HINGE ---------------------------- */
   ex({
     id: "glute_bridge",
+    staple: true,
     name: "Glute Bridge",
     pattern: "hinge",
-    equipment: ["bodyweight", "mat"],
+    equipment: ["bodyweight"],
     primary: ["glutes"],
     secondary: ["hamstrings", "core"],
     difficulty: 1,
@@ -254,6 +260,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "rdl_barbell",
+    staple: true,
     name: "Barbell Romanian Deadlift",
     aliases: ["rdl"],
     pattern: "hinge",
@@ -274,6 +281,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "rdl_dumbbell",
+    staple: true,
     name: "Dumbbell Romanian Deadlift",
     pattern: "hinge",
     equipment: ["dumbbell"],
@@ -293,6 +301,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "deadlift",
+    staple: true,
     name: "Barbell Deadlift",
     aliases: ["conventional deadlift"],
     pattern: "hinge",
@@ -313,6 +322,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "kb_swing",
+    staple: true,
     name: "Kettlebell Swing",
     pattern: "hinge",
     equipment: ["kettlebell"],
@@ -334,7 +344,7 @@ export const EXERCISES: Exercise[] = [
     id: "nordic_curl",
     name: "Nordic Hamstring Curl",
     pattern: "hinge",
-    equipment: ["bodyweight", "mat"],
+    equipment: ["bodyweight"],
     primary: ["hamstrings"],
     secondary: ["glutes", "core"],
     difficulty: 3,
@@ -353,7 +363,7 @@ export const EXERCISES: Exercise[] = [
     name: "Back Extension",
     aliases: ["hyperextension", "superman"],
     pattern: "hinge",
-    equipment: ["bodyweight", "mat"],
+    equipment: ["bodyweight"],
     primary: ["lower_back"],
     secondary: ["glutes", "hamstrings"],
     difficulty: 1,
@@ -371,6 +381,7 @@ export const EXERCISES: Exercise[] = [
   /* ---------------------------- LUNGE ---------------------------- */
   ex({
     id: "reverse_lunge",
+    staple: true,
     name: "Reverse Lunge",
     pattern: "lunge",
     equipment: ["bodyweight"],
@@ -451,6 +462,7 @@ export const EXERCISES: Exercise[] = [
   /* ----------------------- PUSH (HORIZONTAL) --------------------- */
   ex({
     id: "pushup",
+    staple: true,
     name: "Push-Up",
     aliases: ["press up"],
     pattern: "push_horizontal",
@@ -525,6 +537,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "bench_press",
+    staple: true,
     name: "Barbell Bench Press",
     pattern: "push_horizontal",
     equipment: ["barbell", "bench", "rack"],
@@ -544,6 +557,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "db_bench_press",
+    staple: true,
     name: "Dumbbell Bench Press",
     pattern: "push_horizontal",
     equipment: ["dumbbell", "bench"],
@@ -602,6 +616,7 @@ export const EXERCISES: Exercise[] = [
   /* ------------------------ PUSH (VERTICAL) ---------------------- */
   ex({
     id: "pike_pushup",
+    staple: true,
     name: "Pike Push-Up",
     pattern: "push_vertical",
     equipment: ["bodyweight"],
@@ -639,6 +654,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "ohp",
+    staple: true,
     name: "Barbell Overhead Press",
     aliases: ["strict press", "military press", "ohp"],
     pattern: "push_vertical",
@@ -659,6 +675,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "db_shoulder_press",
+    staple: true,
     name: "Dumbbell Shoulder Press",
     pattern: "push_vertical",
     equipment: ["dumbbell"],
@@ -680,6 +697,7 @@ export const EXERCISES: Exercise[] = [
   /* ----------------------- PULL (HORIZONTAL) --------------------- */
   ex({
     id: "inverted_row",
+    staple: true,
     name: "Inverted Row",
     aliases: ["bodyweight row", "australian pullup"],
     pattern: "pull_horizontal",
@@ -687,7 +705,8 @@ export const EXERCISES: Exercise[] = [
     primary: ["back", "lats"],
     secondary: ["biceps", "core", "forearms"],
     difficulty: 1,
-    stresses: ["shoulder", "elbow"],
+    stresses: ["elbow"],
+
     restSec: 90,
     description:
       "Hanging under a bar or sturdy table with a straight body, pull your chest to the bar and lower under control.",
@@ -699,6 +718,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "barbell_row",
+    staple: true,
     name: "Barbell Row",
     aliases: ["bent over row"],
     pattern: "pull_horizontal",
@@ -706,7 +726,8 @@ export const EXERCISES: Exercise[] = [
     primary: ["back", "lats"],
     secondary: ["biceps", "lower_back", "forearms", "traps"],
     difficulty: 2,
-    stresses: ["lower_back", "shoulder"],
+    stresses: ["lower_back"],
+
     restSec: 120,
     loadFactor: 0.6,
     description:
@@ -719,6 +740,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "db_row",
+    staple: true,
     name: "Single-Arm Dumbbell Row",
     pattern: "pull_horizontal",
     equipment: ["dumbbell", "bench"],
@@ -726,7 +748,6 @@ export const EXERCISES: Exercise[] = [
     secondary: ["biceps", "forearms", "core"],
     unilateral: true,
     difficulty: 1,
-    stresses: ["shoulder"],
     restSec: 90,
     loadFactor: 0.3,
     description:
@@ -759,6 +780,7 @@ export const EXERCISES: Exercise[] = [
   /* ------------------------ PULL (VERTICAL) ---------------------- */
   ex({
     id: "pullup",
+    staple: true,
     name: "Pull-Up",
     pattern: "pull_vertical",
     equipment: ["pullup_bar"],
@@ -777,6 +799,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "chinup",
+    staple: true,
     name: "Chin-Up",
     pattern: "pull_vertical",
     equipment: ["pullup_bar"],
@@ -857,7 +880,6 @@ export const EXERCISES: Exercise[] = [
     primary: ["back", "traps"],
     secondary: ["lats", "forearms"],
     difficulty: 1,
-    stresses: ["shoulder"],
     restSec: 45,
     description:
       "Hanging from a bar with straight arms, pull your shoulder blades down and back to raise your body a few inches, then release.",
@@ -871,6 +893,7 @@ export const EXERCISES: Exercise[] = [
   /* ---------------------------- CARRY ---------------------------- */
   ex({
     id: "farmer_carry",
+    staple: true,
     name: "Farmer's Carry",
     pattern: "carry",
     equipment: ["dumbbell"],
@@ -911,14 +934,16 @@ export const EXERCISES: Exercise[] = [
   /* ----------------------------- CORE ---------------------------- */
   ex({
     id: "plank",
+    staple: true,
     name: "Plank",
     pattern: "core",
-    equipment: ["bodyweight", "mat"],
+    equipment: ["bodyweight"],
     primary: ["core"],
     secondary: ["shoulders", "glutes"],
     metric: "time",
     difficulty: 1,
-    stresses: ["shoulder", "lower_back"],
+    stresses: ["lower_back"],
+
     restSec: 45,
     description:
       "Hold a straight-body position on your forearms and toes, keeping your hips level and your core braced.",
@@ -932,7 +957,7 @@ export const EXERCISES: Exercise[] = [
     id: "side_plank",
     name: "Side Plank",
     pattern: "core",
-    equipment: ["bodyweight", "mat"],
+    equipment: ["bodyweight"],
     primary: ["obliques", "core"],
     secondary: ["shoulders", "glutes"],
     metric: "time",
@@ -952,7 +977,7 @@ export const EXERCISES: Exercise[] = [
     id: "hollow_hold",
     name: "Hollow Body Hold",
     pattern: "core",
-    equipment: ["bodyweight", "mat"],
+    equipment: ["bodyweight"],
     primary: ["core"],
     secondary: ["hip_flexors"],
     metric: "time",
@@ -969,9 +994,10 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "dead_bug",
+    staple: true,
     name: "Dead Bug",
     pattern: "core",
-    equipment: ["bodyweight", "mat"],
+    equipment: ["bodyweight"],
     primary: ["core"],
     secondary: ["hip_flexors"],
     difficulty: 1,
@@ -988,7 +1014,7 @@ export const EXERCISES: Exercise[] = [
     id: "bird_dog",
     name: "Bird Dog",
     pattern: "core",
-    equipment: ["bodyweight", "mat"],
+    equipment: ["bodyweight"],
     primary: ["core", "lower_back"],
     secondary: ["glutes", "shoulders"],
     difficulty: 1,
@@ -1003,6 +1029,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "hanging_knee_raise",
+    staple: true,
     name: "Hanging Knee Raise",
     pattern: "core",
     equipment: ["pullup_bar"],
@@ -1023,7 +1050,7 @@ export const EXERCISES: Exercise[] = [
     id: "ab_wheel",
     name: "Ab Wheel Rollout",
     pattern: "core",
-    equipment: ["mat"],
+    equipment: ["ab_wheel"],
     primary: ["core"],
     secondary: ["lats", "shoulders"],
     difficulty: 3,
@@ -1078,6 +1105,7 @@ export const EXERCISES: Exercise[] = [
   /* ------------------------- CONDITIONING ------------------------ */
   ex({
     id: "burpee",
+    staple: true,
     name: "Burpee",
     pattern: "conditioning",
     equipment: ["bodyweight"],
@@ -1155,6 +1183,7 @@ export const EXERCISES: Exercise[] = [
   /* -------------------------- ISOLATION -------------------------- */
   ex({
     id: "bicep_curl",
+    staple: true,
     name: "Dumbbell Bicep Curl",
     pattern: "isolation",
     equipment: ["dumbbell"],
@@ -1210,6 +1239,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "lateral_raise",
+    staple: true,
     name: "Lateral Raise",
     pattern: "isolation",
     equipment: ["dumbbell"],
@@ -1234,7 +1264,6 @@ export const EXERCISES: Exercise[] = [
     primary: ["shoulders", "back"],
     secondary: ["traps"],
     difficulty: 1,
-    stresses: ["shoulder"],
     restSec: 45,
     loadFactor: 0.07,
     description:
@@ -1264,6 +1293,7 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "calf_raise",
+    staple: true,
     name: "Standing Calf Raise",
     pattern: "isolation",
     equipment: ["bodyweight"],
@@ -1284,9 +1314,10 @@ export const EXERCISES: Exercise[] = [
   /* --------------------------- MOBILITY -------------------------- */
   ex({
     id: "cat_cow",
+    staple: true,
     name: "Cat-Cow",
     pattern: "mobility",
-    equipment: ["bodyweight", "mat"],
+    equipment: ["bodyweight"],
     primary: ["lower_back", "core"],
     metric: "time",
     difficulty: 1,
@@ -1301,9 +1332,10 @@ export const EXERCISES: Exercise[] = [
   }),
   ex({
     id: "worlds_greatest_stretch",
+    staple: true,
     name: "World's Greatest Stretch",
     pattern: "mobility",
-    equipment: ["bodyweight", "mat"],
+    equipment: ["bodyweight"],
     primary: ["hip_flexors", "hamstrings"],
     secondary: ["core", "obliques"],
     metric: "time",
@@ -1322,7 +1354,7 @@ export const EXERCISES: Exercise[] = [
     id: "hip_90_90",
     name: "90/90 Hip Switch",
     pattern: "mobility",
-    equipment: ["bodyweight", "mat"],
+    equipment: ["bodyweight"],
     primary: ["hip_flexors", "glutes"],
     secondary: ["adductors"],
     metric: "time",
@@ -1342,7 +1374,7 @@ export const EXERCISES: Exercise[] = [
     name: "Thoracic Rotation",
     aliases: ["open book"],
     pattern: "mobility",
-    equipment: ["bodyweight", "mat"],
+    equipment: ["bodyweight"],
     primary: ["back"],
     secondary: ["obliques", "chest"],
     metric: "time",
@@ -1380,7 +1412,7 @@ export const EXERCISES: Exercise[] = [
     id: "ankle_rock",
     name: "Kneeling Ankle Rock",
     pattern: "mobility",
-    equipment: ["bodyweight", "mat"],
+    equipment: ["bodyweight"],
     primary: ["calves"],
     metric: "time",
     unilateral: true,
@@ -1415,8 +1447,13 @@ export function findExercise(term: string): Exercise | undefined {
   );
 }
 
-/** True when every piece of equipment the exercise needs is available. */
+/**
+ * True when every piece of equipment the exercise needs is available.
+ *
+ * Bodyweight is always available — picking up a barbell does not stop you
+ * being able to do a plank — so it never has to be selected explicitly.
+ */
 export function isAvailable(exercise: Exercise, available: Equipment[]): boolean {
-  const set = new Set<Equipment>(available.length ? available : ["bodyweight"]);
+  const set = new Set<Equipment>([...available, "bodyweight"]);
   return exercise.equipment.every((needed) => set.has(needed));
 }

@@ -19,7 +19,7 @@ export const EQUIPMENT = [
   "box",
   "rings",
   "jump_rope",
-  "mat",
+  "ab_wheel",
   "sled",
   "bike",
   "treadmill",
@@ -104,6 +104,11 @@ export interface Exercise {
   stresses: InjuryArea[];
   /** Default rest between sets, in seconds. */
   restSec: number;
+  /**
+   * The canonical movement for its pattern — the sensible default pick before
+   * variety or a specific constraint argues for something else.
+   */
+  staple: boolean;
   /** Short "how to do it" shown when the exercise name is tapped. */
   description: string;
   /** Form cues, shown as a bulleted list under the description. */
