@@ -219,6 +219,8 @@ api.get("/stats/progression", (req, res) => {
       const exercise = EXERCISE_BY_ID.get(id);
       return exercise ? [computeProgression(id, exercise.name, logs)] : [];
     })
+    // Planned-but-skipped exercises have nothing to report.
+    .filter((state) => state.sessions > 0)
     .sort((a, b) => (b.lastPerformed ?? "").localeCompare(a.lastPerformed ?? ""));
 
   res.json(states);

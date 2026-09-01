@@ -254,8 +254,10 @@ function pickForSlot(args: PickArgs): Exercise | undefined {
       // Nudge toward muscles that have been neglected lately.
       score += e.primary.filter((m) => underTrained.has(m)).length * 6;
 
-      // Variety: penalise anything done in the last two sessions.
-      if (recentIds.has(e.id)) score -= 18;
+      // Variety for accessories, continuity for main lifts: progression on a
+      // squat comes from squatting again, so a main lift done recently is
+      // preferred, while accessories rotate to spread the stimulus.
+      if (recentIds.has(e.id)) score += slot.role === "main" ? 6 : -18;
 
       // The canonical movement for a pattern is the default; variety and
       // specific constraints are what argue you off it.
