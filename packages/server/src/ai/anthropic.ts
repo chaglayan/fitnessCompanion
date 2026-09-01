@@ -18,6 +18,24 @@ import type {
   PatchRequest,
 } from "./provider.js";
 
+/**
+ * An identity-linked key without a workspace id fails identically on every
+ * request, so retrying without betas just burns another round trip. Detect it
+ * and say exactly what to set instead.
+ */
+function isWorkspaceIdError(error: InstanceType<typeof Anthropic.BadRequestError>): boolean {
+  return error.message.includes("anthropic-workspace-id");
+}
+
+function workspaceIdHint(error: InstanceType<typeof Anthropic.BadRequestError>): Error {
+  return new Error(
+    "This API key is identity-linked, so every request must name a " +
+      "workspace. Set ANTHROPIC_WORKSPACE_ID in .env to the workspace id " +
+      '(starts with "wrkspc_") from console.anthropic.com → Settings → ' +
+      `Workspaces. Original error: ${error.message}`,
+  );
+}
+
 /** Enables server-side refusal fallbacks. Paired with `fallbacks: "default"`. */
 const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 
@@ -54,7 +72,18 @@ export class AnthropicProvider implements AiProvider {
   constructor() {
     this.available = Boolean(config.anthropicApiKey);
     this.client = this.available
-      ? new Anthropic({ apiKey: config.anthropicApiKey })
+      ? new Anthropic({
+          apiKey: config.anthropicApiKey,
+          // Identity-linked keys are workspace-scoped and reject any request
+          // that does not name the workspace it acts in.
+          ...(config.anthropicWorkspaceId
+            ? {
+                defaultHeaders: {
+                  "anthropic-workspace-id": config.anthropicWorkspaceId,
+                },
+              }
+            : {}),
+        })
       : undefined;
   }
 
@@ -161,6 +190,7 @@ export class AnthropicProvider implements AiProvider {
       return await run({ betas: [FALLBACK_BETA], fallbacks: "default" });
     } catch (error) {
       if (error instanceof Anthropic.BadRequestError) {
+        if (isWorkspaceIdError(error)) throw workspaceIdHint(error);
         this.fallbacksEnabled = false;
         console.warn(
           "[ai] Server-side refusal fallbacks rejected by the API — " +

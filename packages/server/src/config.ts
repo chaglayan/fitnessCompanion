@@ -1,6 +1,46 @@
 import fs from "node:fs";
 import path from "node:path";
 
+/**
+ * Finds the nearest .env by walking up from the working directory.
+ *
+ * `npm start` runs the workspace script with the cwd set to packages/server,
+ * so looking only in the cwd would miss the .env at the repo root — which is
+ * where the setup instructions put it. Returns the directory holding the
+ * file, so relative paths in it resolve against the same place.
+ */
+function findProjectRoot(from: string): { dir: string; envFile: string | undefined } {
+  let dir = path.resolve(from);
+  for (let depth = 0; depth < 6; depth++) {
+    const candidate = path.join(dir, ".env");
+    if (fs.existsSync(candidate)) return { dir, envFile: candidate };
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  // No .env anywhere above us: fall back to the workspace root if we can see
+  // one, so DB_PATH still lands somewhere predictable.
+  let walk = path.resolve(from);
+  for (let depth = 0; depth < 6; depth++) {
+    if (fs.existsSync(path.join(walk, "package.json"))) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(path.join(walk, "package.json"), "utf8")) as {
+          workspaces?: unknown;
+        };
+        if (pkg.workspaces) return { dir: walk, envFile: undefined };
+      } catch {
+        // Unreadable package.json — keep walking.
+      }
+    }
+    const parent = path.dirname(walk);
+    if (parent === walk) break;
+    walk = parent;
+  }
+  return { dir: path.resolve(from), envFile: undefined };
+}
+
+const projectRoot = findProjectRoot(process.cwd());
+
 /** Minimal .env loader — avoids a dependency for a single-user server. */
 function loadDotEnv(file: string): void {
   if (!fs.existsSync(file)) return;
@@ -22,7 +62,7 @@ function loadDotEnv(file: string): void {
   }
 }
 
-loadDotEnv(path.resolve(process.cwd(), ".env"));
+if (projectRoot.envFile) loadDotEnv(projectRoot.envFile);
 
 function num(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -45,13 +85,20 @@ export const config = {
   authToken: process.env.AUTH_TOKEN ?? "",
   allowNoAuth: process.env.ALLOW_NO_AUTH === "true",
 
-  dbPath: process.env.DB_PATH ?? path.resolve(process.cwd(), "data/fitness.sqlite"),
+  /** Relative paths resolve against the project root, not the launch cwd. */
+  dbPath: path.resolve(projectRoot.dir, process.env.DB_PATH ?? "data/fitness.sqlite"),
 
   /** Origins allowed to call the API. "*" is fine on a LAN-only box. */
   corsOrigins: (process.env.CORS_ORIGINS ?? "*").split(",").map((s) => s.trim()),
 
   provider: (process.env.AI_PROVIDER ?? "anthropic") as ProviderName,
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  /**
+   * Required for identity-linked API keys, which are scoped to a workspace and
+   * reject every request without it. Console → Settings → Workspaces; the id
+   * is in the URL and starts with "wrkspc_". Leave blank for a normal key.
+   */
+  anthropicWorkspaceId: process.env.ANTHROPIC_WORKSPACE_ID ?? "",
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
 
   /**
@@ -85,9 +132,12 @@ export const config = {
 export function assertConfig(): void {
   if (!config.authToken && !config.allowNoAuth) {
     throw new Error(
-      "AUTH_TOKEN is not set. Set one in .env (any long random string), or " +
-        "set ALLOW_NO_AUTH=true if this server is only ever reachable from " +
-        "localhost.",
+      projectRoot.envFile
+        ? `AUTH_TOKEN is empty in ${projectRoot.envFile}. Set it to any long ` +
+          "random string, or set ALLOW_NO_AUTH=true if this server is only " +
+          "ever reachable from localhost."
+        : `No .env file found (looked upward from ${process.cwd()}). Run ` +
+          "`cp .env.example .env` in the project root and set AUTH_TOKEN.",
     );
   }
   if (config.provider === "anthropic" && !config.anthropicApiKey) {
