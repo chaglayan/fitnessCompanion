@@ -8,7 +8,7 @@
     "build": "tsc -b",
     "dev": "node --watch --experimental-strip-types --disable-warning=ExperimentalWarning src/index.ts",
     "start": "node --disable-warning=ExperimentalWarning dist/index.js",
-    "test": "npm run build && node --test --disable-warning=ExperimentalWarning dist/*.test.js dist/**/*.test.js"
+    "test": "tsc -b && node --test --disable-warning=ExperimentalWarning \"dist/**/*.test.js\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
