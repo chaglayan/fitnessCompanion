@@ -1,0 +1,23 @@
+{
+  "name": "@fc/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "schema": "node ./scripts/emit-schema.mjs",
+    "typecheck": "tsc -b",
+    "dev": "npm run schema && wrangler dev",
+    "deploy": "npm run schema && wrangler deploy",
+    "db:init": "npm run schema && wrangler d1 execute fitness --remote --file=./schema.sql",
+    "db:init:local": "npm run schema && wrangler d1 execute fitness --local --file=./schema.sql"
+  },
+  "dependencies": {
+    "@fc/server": "*",
+    "@fc/shared": "*",
+    "hono": "^4.13.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260101.0",
+    "wrangler": "^4.128.0"
+  }
+}

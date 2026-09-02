@@ -1,5 +1,5 @@
 import type { UsageRecord } from "@fc/shared";
-import { config } from "../config.js";
+import type { Config } from "../config.js";
 import { computeCostUsd } from "./pricing.js";
 import { PlanPatchSchema } from "./patch.js";
 import type { PlanPatch } from "./patch.js";
@@ -42,7 +42,7 @@ export class GeminiProvider implements AiProvider {
   readonly name = "gemini" as const;
   readonly available: boolean;
 
-  constructor() {
+  constructor(private readonly config: Config) {
     this.available = Boolean(config.geminiApiKey);
   }
 
@@ -106,18 +106,18 @@ export class GeminiProvider implements AiProvider {
     json: boolean,
     maxOutputTokens: number,
   ): Promise<{ text: string; usage: UsageRecord }> {
-    if (!config.geminiApiKey) {
+    if (!this.config.geminiApiKey) {
       throw new Error("Gemini provider called without an API key configured.");
     }
     const started = Date.now();
 
     const response = await fetch(
-      `${ENDPOINT}/${config.geminiModel}:generateContent`,
+      `${ENDPOINT}/${this.config.geminiModel}:generateContent`,
       {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-goog-api-key": config.geminiApiKey,
+          "x-goog-api-key": this.config.geminiApiKey,
         },
         body: JSON.stringify({
           system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
@@ -153,10 +153,10 @@ export class GeminiProvider implements AiProvider {
         id: crypto.randomUUID(),
         createdAt: new Date().toISOString(),
         provider: "gemini",
-        model: config.geminiModel,
+        model: this.config.geminiModel,
         purpose,
         ...tokens,
-        costUsd: computeCostUsd("gemini", config.geminiModel, tokens),
+        costUsd: computeCostUsd("gemini", this.config.geminiModel, tokens),
         latencyMs: Date.now() - started,
       },
     };

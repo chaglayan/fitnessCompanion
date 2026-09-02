@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { UsageRecord } from "@fc/shared";
-import { config } from "../config.js";
+import type { Config } from "../config.js";
 import { computeCostUsd } from "./pricing.js";
 import { PlanPatchSchema } from "./patch.js";
 import type { PlanPatch } from "./patch.js";
@@ -69,7 +69,7 @@ export class AnthropicProvider implements AiProvider {
    */
   private fallbacksEnabled = true;
 
-  constructor() {
+  constructor(private readonly config: Config) {
     this.available = Boolean(config.anthropicApiKey);
     this.client = this.available
       ? new Anthropic({
@@ -106,12 +106,12 @@ export class AnthropicProvider implements AiProvider {
 
     const response = await this.send((extra) =>
       client.beta.messages.parse({
-        model: config.model,
+        model: this.config.model,
         max_tokens: 2048,
         system: CACHED_SYSTEM,
         messages: [{ role: "user", content: userContent }],
         output_config: {
-          effort: effort(config.planEffort),
+          effort: effort(this.config.planEffort),
           format: zodOutputFormat(PlanPatchSchema),
         },
         ...extra,
@@ -149,11 +149,11 @@ export class AnthropicProvider implements AiProvider {
 
     const response = await this.send((extra) =>
       client.beta.messages.create({
-        model: config.model,
+        model: this.config.model,
         max_tokens: 1200,
         system: CACHED_SYSTEM,
         messages,
-        output_config: { effort: effort(config.chatEffort) },
+        output_config: { effort: effort(this.config.chatEffort) },
         ...extra,
       }),
     );
@@ -226,10 +226,10 @@ export class AnthropicProvider implements AiProvider {
       provider: "anthropic",
       // Report the model that actually served the turn, which can differ from
       // the configured one when a refusal fallback fires.
-      model: response.model || config.model,
+      model: response.model || this.config.model,
       purpose,
       ...tokens,
-      costUsd: computeCostUsd("anthropic", response.model || config.model, tokens),
+      costUsd: computeCostUsd("anthropic", response.model || this.config.model, tokens),
       latencyMs,
     };
   }

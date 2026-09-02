@@ -1,0 +1,33 @@
+name = "fitness-companion"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+# Lets the Anthropic SDK use the Node APIs it expects on Workers.
+compatibility_flags = ["nodejs_compat"]
+
+# The built PWA. `not_found_handling` makes client-side routing work: any path
+# that is not a real file falls back to the app shell.
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "fitness"
+# Replace with the id printed by: wrangler d1 create fitness
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[vars]
+AI_PROVIDER = "anthropic"
+AI_MODEL = "claude-opus-5"
+AI_PLAN_EFFORT = "low"
+AI_CHAT_EFFORT = "low"
+AI_MONTHLY_BUDGET_USD = "5"
+PLAN_CACHE_TTL_MIN = "720"
+PLANNER_FIRST = "true"
+CORS_ORIGINS = "*"
+
+# Secrets are NOT set here — they would end up in git. Set them with:
+#   wrangler secret put AUTH_TOKEN
+#   wrangler secret put ANTHROPIC_API_KEY
+#   wrangler secret put ANTHROPIC_WORKSPACE_ID   (only for identity-linked keys)

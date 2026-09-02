@@ -21,8 +21,9 @@ npm run build
 npm start                 # http://localhost:8080
 ```
 
-Open the URL on your laptop. To get it on your phone, see
-[On your phone](#on-your-phone).
+Open the URL on your laptop. That's the local setup; to reach it from a
+hotel or anywhere else, deploy it to Cloudflare — see
+[From anywhere](#from-anywhere--deploy-to-cloudflare).
 
 Requires Node 22.5 or newer (it uses the built-in `node:sqlite`, so there is
 no native module to compile — it runs on a Raspberry Pi without a toolchain).
@@ -130,19 +131,66 @@ Both devices talk to the same server, so pick how the phone reaches it.
 
 Leave the server address blank if you loaded the app from the server itself.
 
-### From anywhere
+### From anywhere — deploy to Cloudflare
 
-Put it behind a tunnel — [Tailscale](https://tailscale.com) is the least
-work and keeps it off the public internet entirely. A Cloudflare Tunnel or a
-small VPS also works. Whatever you choose, **set a long `AUTH_TOKEN`**: the
-server refuses to start without one unless you explicitly set
-`ALLOW_NO_AUTH=true`.
+This is the setup for travelling: the app lives on Cloudflare's edge, so a
+hotel room at 7am needs nothing running at home. Storage is D1, Cloudflare's
+SQLite, and the PWA is served from the same Worker.
 
-iOS only allows Add to Home Screen from Safari, and only over HTTPS or on
-`localhost` — over plain HTTP on a LAN it still runs fine in Safari, but
-some PWA behaviour is reduced. A tunnel gives you HTTPS and fixes that.
+You need a Cloudflare account and a domain on it (a `workers.dev` subdomain
+works too if you'd rather not use your own).
 
----
+```bash
+npm install
+npx wrangler login                    # opens a browser to authorise
+
+npx wrangler d1 create fitness        # prints a database_id — copy it
+#   paste it into packages/worker/wrangler.toml -> [[d1_databases]] database_id
+
+npm run build                         # must precede db:init, which reads dist/
+npm run db:init -w @fc/worker         # creates the tables in remote D1
+
+cd packages/worker
+npx wrangler secret put AUTH_TOKEN            # any long random string
+npx wrangler secret put ANTHROPIC_API_KEY
+npx wrangler secret put ANTHROPIC_WORKSPACE_ID  # only for identity-linked keys
+cd ../..
+
+npm run deploy                        # builds everything, then wrangler deploy
+```
+
+Secrets go through `wrangler secret put`, never into `wrangler.toml` — that
+file is in git. Non-secret settings (model, budget, effort) live in its
+`[vars]` block where you can see and change them.
+
+**Custom domain.** In the dashboard: Workers & Pages → `fitness-companion` →
+Settings → Domains & Routes → Add custom domain → `fitness.cagliyangil.com`.
+Because the domain is already on Cloudflare, DNS and the certificate are
+handled for you. You get HTTPS, which is also what iOS wants before it will
+treat the app as properly installable.
+
+Then open `https://fitness.cagliyangil.com` on the phone, Add to Home Screen,
+and paste your `AUTH_TOKEN` in the **You** tab. Leave the server address
+blank — the Worker serves the app and the API from one origin.
+
+**Cost.** For one person this sits inside Cloudflare's free tier: Workers
+allows a large daily request count and D1's free storage and row limits are
+far beyond what a training log uses. Your only real spend is the Anthropic
+API, which the budget cap already governs.
+
+**Optional second lock.** Cloudflare Access can require a login before any
+request reaches the Worker, on top of the bearer token. Worth it if you'd
+rather the app not be publicly reachable at all.
+
+### Working on it locally
+
+`npm run dev` runs the Node server against a local SQLite file — fastest for
+development. To exercise the real Workers runtime and a local D1 instead:
+
+```bash
+npm run db:init:local -w @fc/worker
+npm run worker:dev
+```
 
 ## Configuration
 
@@ -177,10 +225,19 @@ Google's current pricing page, or the usage ledger will report `$0`.
 packages/
   shared/   Types, the exercise library, progression math.
             The contract every client speaks.
-  server/   Express + node:sqlite. Deterministic planner, AI provider
-            layer, patch validation, usage ledger.
-  web/      React PWA. Talks only to the server's HTTP API.
+  server/   The API as a Hono app, plus the planner, AI provider layer,
+            patch validation and usage ledger. Storage sits behind a Store
+            interface with two backends: node:sqlite and Cloudflare D1.
+  worker/   Cloudflare entry point. Binds D1 and Workers Assets, then
+            mounts the same Hono app.
+  web/      React PWA. Talks only to the HTTP API.
 ```
+
+The API is written once and runs on both runtimes — Hono works on Node and on
+Workers, and every SQL query lives in `store/base.ts` against a three-method
+driver, so the SQLite and D1 backends cannot drift apart. The database schema
+has one definition (`store/schema.ts`); `npm run schema -w @fc/worker` renders
+it to `schema.sql` for D1 migrations.
 
 `shared/` exists so a native client doesn't have to reimplement the training
 brain. Everything interesting — planning, progression, prompt construction,

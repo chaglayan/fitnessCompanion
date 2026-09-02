@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type {
   ChatMessage,
   GeneratePlanResponse,
@@ -6,33 +5,27 @@ import type {
   UsageRecord,
   WorkoutPlan,
 } from "@fc/shared";
-import { config } from "../config.js";
-import {
-  getCachedPlanId,
-  getDigest,
-  getPlan,
-  getThread,
-  listLogs,
-  recordPlannerHit,
-  recordUsage,
-  saveChatMessage,
-  savePlan,
-  setCachedPlanId,
-  spendSince,
-} from "../db.js";
+import type { Config } from "../config.js";
+import { aiAvailable } from "../config.js";
+import type { Store } from "../store/types.js";
 import { buildPlan } from "../planner/index.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { GeminiProvider } from "./gemini.js";
 import { applyPatch } from "./patch.js";
 import type { AiProvider } from "./provider.js";
 
-let provider: AiProvider | undefined;
+export interface Deps {
+  store: Store;
+  config: Config;
+  /** Overridable so tests can drive the routing without a real API call. */
+  provider?: AiProvider;
+}
 
-export function getProvider(): AiProvider {
-  if (!provider) {
-    provider = config.provider === "gemini" ? new GeminiProvider() : new AnthropicProvider();
-  }
-  return provider;
+export function getProvider(deps: Deps): AiProvider {
+  if (deps.provider) return deps.provider;
+  return deps.config.provider === "gemini"
+    ? new GeminiProvider(deps.config)
+    : new AnthropicProvider(deps.config);
 }
 
 /* ------------------------------ budget ------------------------------- */
@@ -45,15 +38,11 @@ export interface BudgetStatus {
 
 const THIRTY_DAYS_MS = 30 * 86_400_000;
 
-export function budgetStatus(): BudgetStatus {
+export async function budgetStatus(deps: Deps): Promise<BudgetStatus> {
   const since = new Date(Date.now() - THIRTY_DAYS_MS).toISOString();
-  const spentUsd = spendSince(since);
-  const budgetUsd = config.monthlyBudgetUsd;
-  return {
-    spentUsd,
-    budgetUsd,
-    exhausted: budgetUsd > 0 && spentUsd >= budgetUsd,
-  };
+  const spentUsd = await deps.store.spendSince(since);
+  const budgetUsd = deps.config.monthlyBudgetUsd;
+  return { spentUsd, budgetUsd, exhausted: budgetUsd > 0 && spentUsd >= budgetUsd };
 }
 
 /* --------------------------- plan generation -------------------------- */
@@ -62,8 +51,13 @@ export function budgetStatus(): BudgetStatus {
  * Stable fingerprint for a plan request. Identical inputs — same kit, same
  * time, same soreness, same note, same training history — reuse the cached
  * plan instead of paying for it twice.
+ *
+ * Uses Web Crypto rather than node:crypto so it runs unchanged on Workers.
  */
-function fingerprint(constraints: SessionConstraints, digestStamp: string): string {
+async function fingerprint(
+  constraints: SessionConstraints,
+  digestStamp: string,
+): Promise<string> {
   const normalised = {
     equipment: [...constraints.equipment].sort(),
     minutes: constraints.minutes,
@@ -76,7 +70,12 @@ function fingerprint(constraints: SessionConstraints, digestStamp: string): stri
     notes: constraints.notes?.trim().toLowerCase() ?? "",
     digestStamp,
   };
-  return createHash("sha256").update(JSON.stringify(normalised)).digest("hex").slice(0, 32);
+  const bytes = new TextEncoder().encode(JSON.stringify(normalised));
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(hash)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 32);
 }
 
 export interface GenerateOptions {
@@ -96,18 +95,19 @@ export interface GenerateOptions {
  * workout.
  */
 export async function generateSession(
+  deps: Deps,
   constraints: SessionConstraints,
   options: GenerateOptions = {},
 ): Promise<GeneratePlanResponse> {
-  const digest = getDigest();
-  const stamp = digest?.generatedAt ?? "none";
-  const key = fingerprint(constraints, stamp);
+  const { store, config } = deps;
+  const digest = await store.getDigest();
+  const key = await fingerprint(constraints, digest?.generatedAt ?? "none");
 
   if (!options.noCache) {
-    const cachedId = getCachedPlanId(key, config.planCacheTtlMin);
-    const cached = cachedId ? getPlan(cachedId) : undefined;
+    const cachedId = await store.getCachedPlanId(key, config.planCacheTtlMin);
+    const cached = cachedId ? await store.getPlan(cachedId) : undefined;
     if (cached) {
-      recordPlannerHit("cache");
+      await store.recordPlannerHit("cache");
       return {
         plan: { ...cached, source: "cache" },
         routing: "Served from the plan cache — identical request, no tokens spent.",
@@ -115,61 +115,63 @@ export async function generateSession(
     }
   }
 
-  const logs = listLogs(40);
+  const logs = await store.listLogs(40);
   const { plan: draft } = buildPlan({ constraints, logs });
 
   const hasNote = Boolean(constraints.notes?.trim());
   const wantsAi = options.forceAi || hasNote || !config.plannerFirst;
-  const ai = getProvider();
-  const budget = budgetStatus();
+
+  const usePlanner = async (routing: string): Promise<GeneratePlanResponse> => {
+    await store.savePlan(draft);
+    await store.recordPlannerHit("planner");
+    return { plan: draft, routing };
+  };
 
   if (!wantsAi) {
-    savePlan(draft);
-    setCachedPlanId(key, draft.id);
-    recordPlannerHit("planner");
-    return {
-      plan: draft,
-      routing: "Built by the deterministic planner — no AI call needed.",
-    };
+    await store.savePlan(draft);
+    await store.setCachedPlanId(key, draft.id);
+    await store.recordPlannerHit("planner");
+    return { plan: draft, routing: "Built by the deterministic planner — no AI call needed." };
   }
 
-  if (!ai.available) {
-    savePlan(draft);
-    recordPlannerHit("planner");
-    return {
-      plan: draft,
-      routing: `No ${config.provider} API key configured — used the deterministic planner.`,
-    };
+  if (!aiAvailable(config)) {
+    return usePlanner(
+      `No ${config.provider} API key configured — used the deterministic planner.`,
+    );
   }
 
+  const budget = await budgetStatus(deps);
   if (budget.exhausted) {
-    savePlan(draft);
-    recordPlannerHit("planner");
-    return {
-      plan: draft,
-      routing: `Monthly AI budget of $${budget.budgetUsd.toFixed(2)} is spent — used the deterministic planner.`,
-    };
+    return usePlanner(
+      `Monthly AI budget of $${budget.budgetUsd.toFixed(2)} is spent — used the deterministic planner.`,
+    );
   }
 
   try {
-    const result = await ai.patchPlan({ constraints, digest, draft });
-    recordUsage(result.usage);
+    const result = await getProvider(deps).patchPlan({ constraints, digest, draft });
+    await store.recordUsage(result.usage);
 
     const { plan, applied, rejected } = applyPatch(draft, result.data, constraints);
-    savePlan(plan);
-    setCachedPlanId(key, plan.id);
+    await store.savePlan(plan);
+    await store.setCachedPlanId(key, plan.id);
 
-    const routing = buildRouting(result.usage, applied, rejected, result.refused);
-    return { plan, usage: result.usage, routing };
+    return {
+      plan,
+      usage: result.usage,
+      routing: buildRouting(result.usage, applied, rejected, result.refused),
+    };
   } catch (error) {
     console.error("[ai] patchPlan failed, falling back to the planner:", error);
-    savePlan(draft);
-    recordPlannerHit("planner");
-    return {
-      plan: draft,
-      routing: "AI call failed — fell back to the deterministic planner.",
-    };
+    return usePlanner(
+      `AI call failed — fell back to the deterministic planner. ${describe(error)}`,
+    );
   }
+}
+
+/** Surfaces an actionable reason in the UI instead of a bare failure. */
+function describe(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.length > 240 ? `${message.slice(0, 240)}…` : message;
 }
 
 function buildRouting(
@@ -197,58 +199,57 @@ export interface ChatResult {
 }
 
 export async function chat(
+  deps: Deps,
   message: string,
   threadId: string | undefined,
   planId: string | undefined,
 ): Promise<ChatResult> {
+  const { store, config } = deps;
   const thread = threadId ?? crypto.randomUUID();
-  const now = new Date().toISOString();
 
   const userMessage: ChatMessage = {
     id: crypto.randomUUID(),
     role: "user",
     content: message,
-    createdAt: now,
+    createdAt: new Date().toISOString(),
   };
-  saveChatMessage(thread, userMessage);
+  await store.saveChatMessage(thread, userMessage);
 
-  const ai = getProvider();
-  const budget = budgetStatus();
-
-  const decline = (text: string): ChatResult => {
+  const decline = async (text: string): Promise<ChatResult> => {
     const reply: ChatMessage = {
       id: crypto.randomUUID(),
       role: "assistant",
       content: text,
       createdAt: new Date().toISOString(),
     };
-    saveChatMessage(thread, reply);
+    await store.saveChatMessage(thread, reply);
     return { threadId: thread, reply };
   };
 
-  if (!ai.available) {
+  if (!aiAvailable(config)) {
     return decline(
-      `Chat needs an API key. Set ${config.provider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY"} in the server's .env — sessions still work without it.`,
+      `Chat needs an API key. Set ${config.provider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY"} on the server — sessions still work without it.`,
     );
   }
+
+  const budget = await budgetStatus(deps);
   if (budget.exhausted) {
     return decline(
       `Your $${budget.budgetUsd.toFixed(2)} monthly AI budget is spent, so chat is paused. Sessions are still being generated by the planner. Raise AI_MONTHLY_BUDGET_USD to turn chat back on.`,
     );
   }
 
-  // History excludes the message we just saved; the provider appends it.
-  const history = getThread(thread).filter((m) => m.id !== userMessage.id);
-  const plan = planId ? getPlan(planId) : undefined;
+  const history = (await store.getThread(thread)).filter((m) => m.id !== userMessage.id);
+  const plan = planId ? await store.getPlan(planId) : undefined;
 
   try {
-    const result = await ai.chat({
+    const result = await getProvider(deps).chat({
       history,
       message,
-      digest: getDigest(),
+      digest: await store.getDigest(),
       plan,
     });
-    recordUsage(result.usage);
+    await store.recordUsage(result.usage);
 
     const reply: ChatMessage = {
       id: crypto.randomUUID(),
@@ -257,10 +258,10 @@ export async function chat(
       createdAt: new Date().toISOString(),
       ...(planId ? { planId } : {}),
     };
-    saveChatMessage(thread, reply);
+    await store.saveChatMessage(thread, reply);
     return { threadId: thread, reply, usage: result.usage };
   } catch (error) {
     console.error("[ai] chat failed:", error);
-    return decline("I couldn't reach the model just now. Try again in a moment.");
+    return decline(`I couldn't reach the model just now. ${describe(error)}`);
   }
 }

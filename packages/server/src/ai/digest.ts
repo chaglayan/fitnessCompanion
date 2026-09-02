@@ -1,6 +1,6 @@
 import { EXERCISE_BY_ID, computeProgression } from "@fc/shared";
 import type { Focus, Muscle, TrainingDigest, WorkoutLog } from "@fc/shared";
-import { kvGet, listLogs, setDigest } from "../db.js";
+import type { Store } from "../store/types.js";
 
 const WINDOW_DAYS = 28;
 const MAX_KEY_LIFTS = 6;
@@ -13,7 +13,7 @@ const MAX_KEY_LIFTS = 6;
  * call, and almost none of it changes the model's answer. The digest is
  * rebuilt only when a session is logged, not on every request.
  */
-export function buildDigest(logs: WorkoutLog[]): TrainingDigest {
+export function buildDigest(logs: WorkoutLog[], standingNotes: string[]): TrainingDigest {
   const cutoff = Date.now() - WINDOW_DAYS * 86_400_000;
   const recent = logs.filter((l) => new Date(l.startedAt).getTime() >= cutoff);
 
@@ -24,7 +24,6 @@ export function buildDigest(logs: WorkoutLog[]): TrainingDigest {
 
   const recentFocuses: Focus[] = logs.slice(0, 5).map((l) => l.focus);
 
-  // Exercises appearing most often get their current numbers reported.
   const frequency = new Map<string, number>();
   for (const log of recent) {
     for (const entry of log.exercises) {
@@ -59,7 +58,7 @@ export function buildDigest(logs: WorkoutLog[]): TrainingDigest {
     recentFocuses,
     keyLifts,
     underTrained: findUnderTrained(recent),
-    standingNotes: kvGet<string[]>("standing_notes") ?? [],
+    standingNotes,
   };
 }
 
@@ -81,8 +80,12 @@ function findUnderTrained(logs: WorkoutLog[]): Muscle[] {
 }
 
 /** Rebuilds and persists the digest. Called after a session is logged. */
-export function refreshDigest(): TrainingDigest {
-  const digest = buildDigest(listLogs(60));
-  setDigest(digest);
+export async function refreshDigest(store: Store): Promise<TrainingDigest> {
+  const [logs, standingNotes] = await Promise.all([
+    store.listLogs(60),
+    store.kvGet<string[]>("standing_notes"),
+  ]);
+  const digest = buildDigest(logs, standingNotes ?? []);
+  await store.setDigest(digest);
   return digest;
 }

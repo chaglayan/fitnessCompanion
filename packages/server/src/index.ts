@@ -1,62 +1,44 @@
-import path from "node:path";
 import fs from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
-import cors from "cors";
-import express from "express";
-import type { NextFunction, Request, Response } from "express";
-import { assertConfig, config } from "./config.js";
-import { api } from "./routes/api.js";
+import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { createApi } from "./app.js";
+import { assertConfig, resolveConfig } from "./config.js";
+import { findProjectRoot, loadEnvFile } from "./env-file.js";
+import { createSqliteStore } from "./store/sqlite.js";
 import { refreshDigest } from "./ai/digest.js";
-
-assertConfig();
-
-const app = express();
-app.disable("x-powered-by");
-app.use(express.json({ limit: "1mb" }));
-app.use(
-  cors({
-    origin: config.corsOrigins.includes("*") ? true : config.corsOrigins,
-  }),
-);
-
-app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, provider: config.provider });
-});
+import type { Deps } from "./ai/coach.js";
 
 /**
- * Single shared secret, sent by both the laptop and the phone. Compared with a
- * length-independent scan so a wrong token cannot be recovered by timing.
+ * Node entry point — local development and self-hosting. The Cloudflare
+ * deployment uses packages/worker, which mounts the same `createApi`.
  */
-function authenticate(req: Request, res: Response, next: NextFunction): void {
-  if (config.allowNoAuth) {
-    next();
-    return;
-  }
-  const header = req.get("authorization") ?? "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (!timingSafeEqual(token, config.authToken)) {
-    res.status(401).json({ error: "Unauthorized." });
-    return;
-  }
-  next();
-}
+const projectRoot = findProjectRoot();
+if (projectRoot.envFile) loadEnvFile(projectRoot.envFile);
 
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
+const config = resolveConfig(process.env);
+assertConfig(config, projectRoot.envFile);
 
-app.use("/api", authenticate, api);
+// Relative DB paths resolve against the project root, not the launch cwd —
+// `npm start` runs this with the cwd set to packages/server.
+const dbPath = path.resolve(projectRoot.dir, config.dbPath);
+const store = createSqliteStore(dbPath);
+const deps: Deps = { store, config };
 
-// Serve the built PWA when it exists, so one process serves both.
+const app = createApi(() => deps);
+
+// Serve the built PWA from the same process, so one origin serves both.
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webDist = path.resolve(here, "../../web/dist");
+
 if (fs.existsSync(webDist)) {
-  app.use(express.static(webDist));
-  app.get(/^(?!\/api).*/, (_req, res) => {
-    res.sendFile(path.join(webDist, "index.html"));
+  const root = path.relative(process.cwd(), webDist) || ".";
+  app.use("/*", serveStatic({ root }));
+  // Client-side routing: anything not matched falls back to the shell.
+  app.get("*", (c) => {
+    const html = fs.readFileSync(path.join(webDist, "index.html"), "utf8");
+    return c.html(html);
   });
 } else {
   console.warn(
@@ -64,23 +46,18 @@ if (fs.existsSync(webDist)) {
   );
 }
 
-app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error("[server]", error);
-  res.status(500).json({ error: "Internal error." });
-});
+const port = Number(process.env["PORT"] ?? 8080);
+const hostname = process.env["HOST"] ?? "0.0.0.0";
 
 // Warm the digest so the first plan request does not pay to build it.
-try {
-  refreshDigest();
-} catch (error) {
+refreshDigest(store).catch((error: unknown) => {
   console.warn("[server] Could not build the training digest at startup:", error);
-}
+});
 
-app.listen(config.port, config.host, () => {
-  console.log(
-    `[server] Fitness companion listening on http://${config.host}:${config.port}`,
-  );
+serve({ fetch: app.fetch, port, hostname }, (info) => {
+  console.log(`[server] Fitness companion listening on http://${hostname}:${info.port}`);
   console.log(`[server] Provider: ${config.provider} (${config.model})`);
+  console.log(`[server] Database: ${dbPath}`);
   console.log(
     `[server] AI budget: ${config.monthlyBudgetUsd > 0 ? `$${config.monthlyBudgetUsd}/30d` : "unlimited"}`,
   );

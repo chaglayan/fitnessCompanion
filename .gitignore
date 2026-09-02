@@ -10,3 +10,7 @@ data/
 *.sqlite-shm
 .DS_Store
 packages/web/dev-dist/
+
+# Local Worker secrets — never commit
+packages/worker/.dev.vars
+packages/worker/.wrangler/

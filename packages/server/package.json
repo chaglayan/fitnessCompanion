@@ -15,11 +15,50 @@
     "@fc/shared": "*",
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "zod": "^4.1.13"
+    "hono": "^4.13.5",
+    "zod": "^4.1.13",
+    "@hono/node-server": "^2.1.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260902.1",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
-    "@types/node": "^22.10.5"
+    "@types/node": "^22.10.5",
+    "wrangler": "^4.128.0"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./app": {
+      "types": "./dist/app.d.ts",
+      "default": "./dist/app.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "default": "./dist/config.js"
+    },
+    "./ai/coach": {
+      "types": "./dist/ai/coach.d.ts",
+      "default": "./dist/ai/coach.js"
+    },
+    "./store/types": {
+      "types": "./dist/store/types.d.ts",
+      "default": "./dist/store/types.js"
+    },
+    "./store/d1": {
+      "types": "./dist/store/d1.d.ts",
+      "default": "./dist/store/d1.js"
+    },
+    "./store/sqlite": {
+      "types": "./dist/store/sqlite.d.ts",
+      "default": "./dist/store/sqlite.js"
+    },
+    "./store/schema": {
+      "types": "./dist/store/schema.d.ts",
+      "default": "./dist/store/schema.js"
+    }
   }
 }
