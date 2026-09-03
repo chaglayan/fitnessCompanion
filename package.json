@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5.0"
   },
   "scripts": {
     "build": "npm run build -w @fc/shared && npm run build -w @fc/server && npm run build -w @fc/web",
