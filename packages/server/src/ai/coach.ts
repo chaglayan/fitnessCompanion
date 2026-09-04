@@ -194,6 +194,12 @@ function buildRouting(
 export interface ReviseResult extends GeneratePlanResponse {
   /** Changes the guardrails refused, so the UI can be honest about them. */
   rejected?: string[];
+  /**
+   * False when the request never reached the model — no key, or the budget is
+   * spent. The client keeps the user's text in that case rather than clearing
+   * a paragraph of feedback that was never sent anywhere.
+   */
+  aiCalled: boolean;
 }
 
 /**
@@ -215,9 +221,10 @@ export async function revisePlan(
   if (!aiAvailable(config)) {
     return {
       plan: current,
+      aiCalled: false,
       routing:
-        `Changing a session needs an API key. Set ${config.provider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY"} on the server. ` +
-        "You can still rebuild with different equipment or time.",
+        `Detailed feedback needs an API key. Set ${config.provider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY"} on the server — ` +
+        "your text is still here. The quick buttons above work without one.",
     };
   }
 
@@ -225,7 +232,8 @@ export async function revisePlan(
   if (budget.exhausted) {
     return {
       plan: current,
-      routing: `Your $${budget.budgetUsd.toFixed(2)} monthly AI budget is spent, so changes are paused until it resets.`,
+      aiCalled: false,
+      routing: `Your $${budget.budgetUsd.toFixed(2)} monthly AI budget is spent, so detailed feedback is paused until it resets. The quick buttons still work.`,
     };
   }
 
@@ -250,6 +258,7 @@ export async function revisePlan(
   return {
     plan: revised,
     usage: result.usage,
+    aiCalled: true,
     routing: applied.length
       ? `${applied.join(" ")} ($${result.usage.costUsd.toFixed(4)})`
       : `No changes made — the model judged the session already fits what you asked. ($${result.usage.costUsd.toFixed(4)})`,

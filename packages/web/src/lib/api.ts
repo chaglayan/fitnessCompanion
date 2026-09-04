@@ -114,7 +114,7 @@ export const api = {
 
   /** Applies free-text feedback to a plan; always costs an AI call. */
   revisePlan: (id: string, feedback: string) =>
-    request<GeneratePlanResponse & { rejected?: string[] }>(`/plans/${id}/revise`, {
+    request<GeneratePlanResponse & { rejected?: string[]; aiCalled: boolean }>(`/plans/${id}/revise`, {
       method: "POST",
       body: JSON.stringify({ feedback }),
     }),

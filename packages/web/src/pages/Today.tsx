@@ -106,6 +106,8 @@ export function Today({
   const [revising, setRevising] = useState(false);
   /** Which quick adjustment is in flight, if any. */
   const [adjusting, setAdjusting] = useState<QuickOp | undefined>();
+  /** Undefined until the server has been asked; false disables the AI box. */
+  const [aiAvailable, setAiAvailable] = useState<boolean | undefined>();
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -120,6 +122,15 @@ export function Today({
       experience,
     });
   }, [equipment, minutes, injuries, experience]);
+
+  // Knowing this up front means the AI box can be disabled before the user
+  // writes a paragraph into it, rather than after.
+  useEffect(() => {
+    api
+      .settings()
+      .then((s) => setAiAvailable(s.aiAvailable))
+      .catch(() => setAiAvailable(undefined));
+  }, []);
 
   const toggle = <T,>(list: T[], value: T): T[] =>
     list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
@@ -190,7 +201,8 @@ export function Today({
           ? `${result.routing} Couldn't do: ${result.rejected.join(" ")}`
           : result.routing,
       );
-      setFeedback("");
+      // Only clear the box once the text has actually been sent somewhere.
+      if (result.aiCalled) setFeedback("");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -387,6 +399,12 @@ export function Today({
             <label className="field__label" htmlFor="feedback">
               Detailed feedback — ask the AI
             </label>
+            {aiAvailable === false && (
+              <div className="banner banner--warn">
+                No API key on the server, so this box is off. Everything above
+                still works.
+              </div>
+            )}
             <textarea
               id="feedback"
               value={feedback}
@@ -401,7 +419,7 @@ export function Today({
             />
             <button
               className="btn"
-              disabled={revising || !feedback.trim()}
+              disabled={revising || !feedback.trim() || aiAvailable === false}
               style={{ marginTop: 8 }}
               onClick={() => void revise()}
             >

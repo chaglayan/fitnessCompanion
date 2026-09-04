@@ -57,6 +57,7 @@ export declare const api: {
     /** Applies free-text feedback to a plan; always costs an AI call. */
     revisePlan: (id: string, feedback: string) => Promise<GeneratePlanResponse & {
         rejected?: string[];
+        aiCalled: boolean;
     }>;
     plans: () => Promise<WorkoutPlan[]>;
     saveLog: (log: Omit<WorkoutLog, "id"> & {
