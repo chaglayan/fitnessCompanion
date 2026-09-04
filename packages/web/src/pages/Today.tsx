@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type {
   Equipment,
+  Experience,
   Focus,
   InjuryArea,
   Muscle,
@@ -52,6 +53,12 @@ const FOCUS_OPTIONS: Array<{ id: Focus | "auto"; label: string }> = [
   { id: "mobility", label: "Mobility" },
 ];
 
+const EXPERIENCE_OPTIONS: Array<{ id: Experience; label: string; hint: string }> = [
+  { id: "beginner", label: "Beginner", hint: "Easier variations, more in reserve" },
+  { id: "intermediate", label: "Intermediate", hint: "Middle of the rep range" },
+  { id: "advanced", label: "Advanced", hint: "Harder variations, closer to failure" },
+];
+
 const TIME_OPTIONS = [15, 20, 30, 45, 60, 75, 90];
 const ENERGY_LABELS = ["Wrecked", "Tired", "Normal", "Good", "Great"];
 
@@ -79,7 +86,10 @@ export function Today({
   const [soreness, setSoreness] = useState<Record<string, SorenessLevel>>({});
   const [injuries, setInjuries] = useState<InjuryArea[]>(stored.standingInjuries);
   const [focus, setFocus] = useState<Focus | "auto">("auto");
+  const [experience, setExperience] = useState<Experience>(stored.experience);
   const [notes, setNotes] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [revising, setRevising] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -91,8 +101,9 @@ export function Today({
       defaultEquipment: equipment,
       defaultMinutes: minutes,
       standingInjuries: injuries,
+      experience,
     });
-  }, [equipment, minutes, injuries]);
+  }, [equipment, minutes, injuries, experience]);
 
   const toggle = <T,>(list: T[], value: T): T[] =>
     list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
@@ -122,6 +133,7 @@ export function Today({
           muscle: muscle as Muscle,
           level,
         })),
+        experience,
         ...(focus === "auto" ? {} : { focus }),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
       };
@@ -132,6 +144,26 @@ export function Today({
       setError((e as Error).message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const revise = async () => {
+    if (!plan || !feedback.trim()) return;
+    setRevising(true);
+    setError(undefined);
+    try {
+      const result = await api.revisePlan(plan.id, feedback.trim());
+      onPlan(result.plan);
+      setRouting(
+        result.rejected?.length
+          ? `${result.routing} Couldn't do: ${result.rejected.join(" ")}`
+          : result.routing,
+      );
+      setFeedback("");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRevising(false);
     }
   };
 
@@ -196,6 +228,25 @@ export function Today({
             setEnergy(Number(e.target.value) as SessionConstraints["energy"])
           }
         />
+      </div>
+
+      <div className="field">
+        <label className="field__label">How hard should this be?</label>
+        <div className="chips">
+          {EXPERIENCE_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              className="chip"
+              aria-pressed={experience === option.id}
+              onClick={() => setExperience(option.id)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <p className="faint" style={{ marginTop: 6 }}>
+          {EXPERIENCE_OPTIONS.find((o) => o.id === experience)?.hint}
+        </p>
       </div>
 
       <div className="field">
@@ -278,10 +329,36 @@ export function Today({
           <p className="sub">{plan.summary}</p>
           {routing && <div className="banner banner--info">{routing}</div>}
           <PlanView plan={plan} onOpenExercise={onOpenExercise} />
+
+          <div className="card" style={{ marginTop: 14 }}>
+            <label className="field__label" htmlFor="feedback">
+              Want it different? Say so before you start
+            </label>
+            <textarea
+              id="feedback"
+              value={feedback}
+              placeholder="e.g. too easy, push the squats harder&#10;swap the burpees for something quieter&#10;I've only got 20 minutes now"
+              onChange={(e) => setFeedback(e.target.value)}
+              style={{ minHeight: 68 }}
+            />
+            <button
+              className="btn"
+              disabled={revising || !feedback.trim()}
+              style={{ marginTop: 8 }}
+              onClick={() => void revise()}
+            >
+              {revising ? <span className="spinner" /> : "Apply changes"}
+            </button>
+            <p className="faint" style={{ marginTop: 8, marginBottom: 0 }}>
+              This one asks the AI, so it costs a fraction of a cent. Changing
+              equipment or time above and rebuilding is free.
+            </p>
+          </div>
+
           <button
             className="btn btn--primary"
             onClick={() => onStart(plan)}
-            style={{ marginTop: 8 }}
+            style={{ marginTop: 12 }}
           >
             Start session
           </button>

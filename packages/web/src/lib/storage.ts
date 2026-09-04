@@ -1,4 +1,4 @@
-import type { Equipment, InjuryArea } from "@fc/shared";
+import type { Equipment, Experience, InjuryArea } from "@fc/shared";
 
 export interface LocalSettings {
   /** Empty means same origin — used when the server serves the built PWA. */
@@ -7,6 +7,8 @@ export interface LocalSettings {
   defaultEquipment: Equipment[];
   defaultMinutes: number;
   standingInjuries: InjuryArea[];
+  /** Remembered between sessions — it rarely changes. */
+  experience: Experience;
   /** Play a sound and vibrate when a countdown finishes. */
   cues: boolean;
 }
@@ -19,6 +21,7 @@ const DEFAULTS: LocalSettings = {
   defaultEquipment: ["bodyweight"],
   defaultMinutes: 45,
   standingInjuries: [],
+  experience: "intermediate",
   cues: true,
 };
 

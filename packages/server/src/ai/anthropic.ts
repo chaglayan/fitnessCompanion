@@ -101,7 +101,9 @@ export class AnthropicProvider implements AiProvider {
       "DRAFT SESSION",
       renderPlanDraft(request.draft),
       "",
-      "Review the draft against today's constraints and the user's note. Return only the operations that genuinely improve it — an empty operations list is the correct answer when the draft is already right.",
+      request.feedback
+        ? `The user has seen this session and asked for changes:\n"${request.feedback}"\n\nMake those changes. This is a direct request, not a suggestion — return the operations that satisfy it. If what they asked for is not possible with their equipment or injuries, get as close as you can and say why in the reason.`
+        : "Review the draft against today's constraints and the user's note. Return only the operations that genuinely improve it — an empty operations list is the correct answer when the draft is already right.",
     ].join("\n");
 
     const response = await this.send((extra) =>

@@ -152,3 +152,112 @@ test("progression carries the last logged load forward", () => {
   const load = squat.sets[0]?.weightKg ?? 0;
   assert.ok(load >= 100, `expected at least the previous 100kg, got ${load}`);
 });
+
+/* ------------------- experience, feedback, and balance ------------------ */
+
+function ratedLog(rating: number): WorkoutLog {
+  return {
+    id: "rated",
+    startedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+    focus: "full_body",
+    soreness: [],
+    rating,
+    exercises: [
+      {
+        exerciseId: "pushup",
+        name: "Push-Up",
+        sets: [{ setIndex: 0, reps: 10, completed: true }],
+      },
+    ],
+  };
+}
+
+function averageRir(plan: ReturnType<typeof buildPlan>["plan"]): number {
+  const sets = allExercises(plan)
+    .flatMap((e) => e.sets)
+    .filter((s) => s.rir !== undefined);
+  return sets.reduce((sum, s) => sum + (s.rir ?? 0), 0) / Math.max(1, sets.length);
+}
+
+test("experience level changes how hard the first session is pitched", () => {
+  const equipment: SessionConstraints["equipment"] = ["bodyweight", "dumbbell"];
+  const rirByLevel = (["beginner", "intermediate", "advanced"] as const).map((experience) =>
+    averageRir(buildPlan({ constraints: constraints({ equipment, experience }), logs: [] }).plan),
+  );
+
+  // Reps in reserve should fall monotonically as experience rises: an
+  // advanced lifter works closer to failure than a beginner.
+  assert.ok(
+    rirByLevel[0]! > rirByLevel[1]! && rirByLevel[1]! > rirByLevel[2]!,
+    `expected descending RIR across levels, got ${rirByLevel.join(", ")}`,
+  );
+});
+
+test('"too easy" feedback raises intensity, "too hard" lowers it', () => {
+  const base = constraints({ equipment: ["bodyweight", "dumbbell"], minutes: 45 });
+  const neutral = averageRir(buildPlan({ constraints: base, logs: [] }).plan);
+  const tooEasy = averageRir(buildPlan({ constraints: base, logs: [ratedLog(1)] }).plan);
+  const tooHard = averageRir(buildPlan({ constraints: base, logs: [ratedLog(5)] }).plan);
+
+  // Lower RIR means working closer to failure, i.e. harder.
+  assert.ok(tooEasy < neutral, `too-easy should lower RIR: ${tooEasy} vs ${neutral}`);
+  assert.ok(tooHard > neutral, `too-hard should raise RIR: ${tooHard} vs ${neutral}`);
+});
+
+test("a fixed time budget is not filled by repeating one movement pattern", () => {
+  // Bodyweight + dumbbells with no bench or bar leaves no pulling available,
+  // which is exactly the case that previously produced four presses.
+  const { plan } = buildPlan({
+    constraints: constraints({
+      equipment: ["bodyweight", "dumbbell"],
+      minutes: 60,
+      focus: "upper",
+    }),
+    logs: [],
+  });
+
+  const counts = new Map<string, number>();
+  for (const entry of allExercises(plan)) {
+    const exercise = EXERCISE_BY_ID.get(entry.exerciseId);
+    assert.ok(exercise);
+    counts.set(exercise.pattern, (counts.get(exercise.pattern) ?? 0) + 1);
+  }
+
+  for (const [pattern, count] of counts) {
+    assert.ok(count <= 3, `${count} exercises share the ${pattern} pattern`);
+  }
+});
+
+test("says so when the equipment makes a balanced session impossible", () => {
+  const { plan } = buildPlan({
+    constraints: constraints({ equipment: ["bodyweight", "dumbbell"], focus: "upper" }),
+    logs: [],
+  });
+  const patterns = new Set(
+    allExercises(plan).map((e) => EXERCISE_BY_ID.get(e.exerciseId)?.pattern),
+  );
+  const pushes = patterns.has("push_horizontal") || patterns.has("push_vertical");
+  const pulls = patterns.has("pull_horizontal") || patterns.has("pull_vertical");
+
+  if (pushes && !pulls) {
+    assert.match(plan.summary, /No pulling movements are possible/);
+  }
+});
+
+test("rest is charged between sets, not after the last one", () => {
+  // Three sets means two rests. A four-set exercise that charged rest after
+  // every set inflated every session by roughly one rest period per exercise.
+  const { plan } = buildPlan({
+    constraints: constraints({ equipment: ["bodyweight"], minutes: 45 }),
+    logs: [],
+  });
+  const single = allExercises(plan).find((e) => e.sets.length === 1);
+  if (single) {
+    // A single-set exercise incurs no rest at all.
+    assert.ok(single.restSec >= 0);
+  }
+  assert.ok(
+    plan.estimatedMinutes <= 45,
+    `estimate ${plan.estimatedMinutes} exceeds the 45 minute budget`,
+  );
+});

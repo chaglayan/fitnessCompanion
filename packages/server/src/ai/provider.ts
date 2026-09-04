@@ -11,6 +11,12 @@ export interface PatchRequest {
   constraints: SessionConstraints;
   digest: TrainingDigest | undefined;
   draft: WorkoutPlan;
+  /**
+   * What the user asked to change about this specific session, e.g. "too
+   * easy", "swap the squats", "I've only got 20 minutes now". Present only
+   * when revising an already-shown plan.
+   */
+  feedback?: string;
 }
 
 export interface ChatTurnRequest {

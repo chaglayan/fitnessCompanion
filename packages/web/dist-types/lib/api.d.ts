@@ -47,6 +47,10 @@ export declare const api: {
     exercise: (id: string) => Promise<ExerciseDetail>;
     generatePlan: (body: GeneratePlanRequest) => Promise<GeneratePlanResponse>;
     plan: (id: string) => Promise<WorkoutPlan>;
+    /** Applies free-text feedback to a plan; always costs an AI call. */
+    revisePlan: (id: string, feedback: string) => Promise<GeneratePlanResponse & {
+        rejected?: string[];
+    }>;
     plans: () => Promise<WorkoutPlan[]>;
     saveLog: (log: Omit<WorkoutLog, "id"> & {
         id?: string;

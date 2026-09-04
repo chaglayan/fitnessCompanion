@@ -57,6 +57,10 @@ export function Player({ plan, onExit, onFinished, onOpenExercise }: Props) {
   const [actualWeight, setActualWeight] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  /** Shown when the user taps Finish, before the log is written. */
+  const [wrapUp, setWrapUp] = useState(false);
+  const [rating, setRating] = useState<number | undefined>();
+  const [sessionNote, setSessionNote] = useState("");
 
   const current = exercises[state.exerciseIndex];
   const cues = loadSettings().cues;
@@ -174,6 +178,8 @@ export function Player({ plan, onExit, onFinished, onOpenExercise }: Props) {
         finishedAt: new Date().toISOString(),
         focus: plan.focus,
         soreness: plan.constraints.soreness,
+        ...(rating ? { rating } : {}),
+        ...(sessionNote.trim() ? { note: sessionNote.trim() } : {}),
         exercises: exercises.map((exercise) => ({
           exerciseId: exercise.exerciseId,
           name: exercise.name,
@@ -194,6 +200,70 @@ export function Player({ plan, onExit, onFinished, onOpenExercise }: Props) {
   const completedCount = Object.values(state.logged).flat().filter(Boolean).length;
   const totalSets = exercises.reduce((sum, e) => sum + e.sets.length, 0);
 
+  const RATINGS = [
+    { value: 1, label: "Too easy" },
+    { value: 2, label: "Easy" },
+    { value: 3, label: "About right" },
+    { value: 4, label: "Hard" },
+    { value: 5, label: "Too hard" },
+  ];
+
+  if (wrapUp) {
+    return (
+      <div className="app">
+        <main className="app__main">
+          <h1>How did that go?</h1>
+          <p className="sub">
+            This shapes your next session — it's the only way I learn whether
+            the last one was pitched right.
+          </p>
+
+          {error && <div className="banner banner--error">{error}</div>}
+
+          <div className="field">
+            <label className="field__label">Difficulty</label>
+            <div className="chips">
+              {RATINGS.map((option) => (
+                <button
+                  key={option.value}
+                  className="chip"
+                  aria-pressed={rating === option.value}
+                  onClick={() => setRating(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="field">
+            <label className="field__label" htmlFor="note">
+              Anything worth remembering? (optional)
+            </label>
+            <textarea
+              id="note"
+              value={sessionNote}
+              placeholder="e.g. left shoulder twinged on the presses&#10;squats felt strong, add weight next time"
+              onChange={(e) => setSessionNote(e.target.value)}
+            />
+          </div>
+
+          <button className="btn btn--primary" onClick={finish} disabled={saving}>
+            {saving ? <span className="spinner" /> : "Save session"}
+          </button>
+          <button
+            className="btn btn--ghost"
+            style={{ marginTop: 8 }}
+            onClick={() => setWrapUp(false)}
+            disabled={saving}
+          >
+            Back to the session
+          </button>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <main className="app__main">
@@ -204,8 +274,12 @@ export function Player({ plan, onExit, onFinished, onOpenExercise }: Props) {
           <span className="grow faint" style={{ textAlign: "center" }}>
             {completedCount}/{totalSets} sets
           </span>
-          <button className="btn btn--sm btn--ghost" onClick={finish} disabled={saving}>
-            {saving ? <span className="spinner" /> : "Finish"}
+          <button
+            className="btn btn--sm btn--ghost"
+            onClick={() => setWrapUp(true)}
+            disabled={saving}
+          >
+            Finish
           </button>
         </div>
 

@@ -133,6 +133,14 @@ export interface Soreness {
   level: SorenessLevel;
 }
 
+/**
+ * How hard to pitch the work. Without history the planner has no other signal,
+ * and defaulting everyone to the bottom of the rep range makes a trained
+ * person's first session insultingly easy.
+ */
+export const EXPERIENCE_LEVELS = ["beginner", "intermediate", "advanced"] as const;
+export type Experience = (typeof EXPERIENCE_LEVELS)[number];
+
 export const FOCUSES = [
   "full_body",
   "upper",
@@ -158,6 +166,8 @@ export interface SessionConstraints {
   energy: 1 | 2 | 3 | 4 | 5;
   /** Omit to let the planner pick based on what was trained recently. */
   focus?: Focus;
+  /** Defaults to "intermediate" when absent. */
+  experience?: Experience;
   /** Free text. Its presence is what routes a request to the AI. */
   notes?: string;
 }
@@ -295,6 +305,11 @@ export interface TrainingDigest {
   underTrained: Muscle[];
   /** Persistent constraints worth remembering across sessions. */
   standingNotes: string[];
+  /**
+   * How the last few sessions actually landed, in the user's own words.
+   * Without this, "that was too easy" has nowhere to go.
+   */
+  recentFeedback: string[];
 }
 
 export interface ChatMessage {

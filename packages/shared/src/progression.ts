@@ -1,10 +1,24 @@
 import type {
   Exercise,
+  Experience,
   LoggedSet,
   ProgressionState,
   SetPrescription,
   WorkoutLog,
 } from "./types.js";
+
+/**
+ * How each level pitches a first, historyless prescription: where in the rep
+ * range to start, and how much to adjust the reps-in-reserve target.
+ */
+export const EXPERIENCE_PROFILE: Record<
+  Experience,
+  { startAt: "min" | "mid" | "max"; rirDelta: number; volumeScale: number }
+> = {
+  beginner: { startAt: "min", rirDelta: 1, volumeScale: 0.85 },
+  intermediate: { startAt: "mid", rirDelta: 0, volumeScale: 1 },
+  advanced: { startAt: "max", rirDelta: -1, volumeScale: 1.15 },
+};
 
 /**
  * Epley estimated one-rep max. Accurate enough for progression decisions in
@@ -123,6 +137,8 @@ export interface PrescriptionOptions {
   incrementKg?: number;
   /** Scales volume down for low energy or high soreness (0.5 - 1.0). */
   volumeScale?: number;
+  /** Defaults to "intermediate". */
+  experience?: Experience;
 }
 
 /**
@@ -159,12 +175,19 @@ export function nextPrescription(
   const last = state?.lastTopSet;
   const loaded = requiresLoad(exercise);
 
-  // No history: start conservatively at the bottom of the range.
+  // No history: pitch the first session by stated experience rather than
+  // always starting at the bottom of the range.
   if (!last || last.reps === 0) {
+    const profile = EXPERIENCE_PROFILE[options.experience ?? "intermediate"];
+    const startReps =
+      profile.startAt === "min"
+        ? minReps
+        : profile.startAt === "max"
+          ? maxReps
+          : Math.round((minReps + maxReps) / 2);
     return Array.from({ length: setCount }, () => ({
-      reps: minReps,
-      rir: rir + 1,
-      ...(loaded ? {} : {}),
+      reps: startReps,
+      rir: Math.max(0, rir + profile.rirDelta),
     }));
   }
 

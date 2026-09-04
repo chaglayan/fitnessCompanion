@@ -189,6 +189,74 @@ function buildRouting(
   return rejected.length ? `${head} Ignored: ${rejected.join(" ")}` : head;
 }
 
+/* ------------------------------ revision ------------------------------ */
+
+export interface ReviseResult extends GeneratePlanResponse {
+  /** Changes the guardrails refused, so the UI can be honest about them. */
+  rejected?: string[];
+}
+
+/**
+ * Applies a user's free-text feedback to a plan they are looking at.
+ *
+ * Unlike generation, this always calls the model — reacting to "make it
+ * harder" or "swap the squats" is exactly the judgement the planner cannot
+ * make. The result is saved as a new plan so the original stays in history.
+ */
+export async function revisePlan(
+  deps: Deps,
+  planId: string,
+  feedback: string,
+): Promise<ReviseResult> {
+  const { store, config } = deps;
+  const current = await store.getPlan(planId);
+  if (!current) throw new Error("That session no longer exists — build a new one.");
+
+  if (!aiAvailable(config)) {
+    return {
+      plan: current,
+      routing:
+        `Changing a session needs an API key. Set ${config.provider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY"} on the server. ` +
+        "You can still rebuild with different equipment or time.",
+    };
+  }
+
+  const budget = await budgetStatus(deps);
+  if (budget.exhausted) {
+    return {
+      plan: current,
+      routing: `Your $${budget.budgetUsd.toFixed(2)} monthly AI budget is spent, so changes are paused until it resets.`,
+    };
+  }
+
+  const result = await getProvider(deps).patchPlan({
+    constraints: current.constraints,
+    digest: await store.getDigest(),
+    draft: current,
+    feedback,
+  });
+  await store.recordUsage(result.usage);
+
+  const { plan, applied, rejected } = applyPatch(current, result.data, current.constraints);
+  // A revision is a new plan, so the original stays intact in history.
+  const revised: WorkoutPlan = {
+    ...plan,
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    source: applied.length ? "planner+ai" : plan.source,
+  };
+  await store.savePlan(revised);
+
+  return {
+    plan: revised,
+    usage: result.usage,
+    routing: applied.length
+      ? `${applied.join(" ")} ($${result.usage.costUsd.toFixed(4)})`
+      : `No changes made — the model judged the session already fits what you asked. ($${result.usage.costUsd.toFixed(4)})`,
+    ...(rejected.length ? { rejected } : {}),
+  };
+}
+
 /* ------------------------------- chat -------------------------------- */
 
 export interface ChatResult {

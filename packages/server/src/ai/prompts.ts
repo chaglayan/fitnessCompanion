@@ -93,6 +93,9 @@ export function renderDigest(digest: TrainingDigest | undefined): string {
   if (digest.standingNotes.length) {
     lines.push(`standing notes: ${digest.standingNotes.join("; ")}`);
   }
+  if (digest.recentFeedback.length) {
+    lines.push(`how recent sessions felt: ${digest.recentFeedback.join(" | ")}`);
+  }
   return lines.join("\n");
 }
 

@@ -59,7 +59,29 @@ export function buildDigest(logs: WorkoutLog[], standingNotes: string[]): Traini
     keyLifts,
     underTrained: findUnderTrained(recent),
     standingNotes,
+    recentFeedback: collectFeedback(logs),
   };
+}
+
+const DIFFICULTY_WORDS: Record<number, string> = {
+  1: "far too easy",
+  2: "a bit easy",
+  3: "about right",
+  4: "hard",
+  5: "too hard",
+};
+
+/** The last few sessions' ratings and notes, newest first. */
+function collectFeedback(logs: WorkoutLog[]): string[] {
+  return logs
+    .filter((l) => l.rating !== undefined || l.note?.trim())
+    .slice(0, 3)
+    .map((l) => {
+      const when = l.startedAt.slice(0, 10);
+      const rated = l.rating ? DIFFICULTY_WORDS[l.rating] ?? "" : "";
+      const note = l.note?.trim();
+      return [when, [rated, note].filter(Boolean).join(" — ")].join(": ");
+    });
 }
 
 function findUnderTrained(logs: WorkoutLog[]): Muscle[] {

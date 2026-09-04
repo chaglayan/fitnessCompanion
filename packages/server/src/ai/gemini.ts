@@ -57,6 +57,9 @@ export class GeminiProvider implements AiProvider {
       "DRAFT SESSION",
       renderPlanDraft(request.draft),
       "",
+      ...(request.feedback
+        ? [`The user has seen this session and asked for changes: "${request.feedback}". Make those changes — this is a direct request.`, ""]
+        : []),
       'Reply with JSON only, matching: {"summary"?: string, "operations": [...]}.',
       'Each operation is one of: {"op":"swap","exerciseId":..,"withExerciseId":..,"reason":..}, ',
       '{"op":"remove","exerciseId":..,"reason":..}, ',

@@ -1,12 +1,14 @@
 import {
   EXERCISES,
   EXERCISE_BY_ID,
+  EXPERIENCE_PROFILE,
   computeProgression,
   isAvailable,
   nextPrescription,
 } from "@fc/shared";
 import type {
   Exercise,
+  Experience,
   Focus,
   Muscle,
   Pattern,
@@ -18,13 +20,43 @@ import type {
   WorkoutPlan,
 } from "@fc/shared";
 import { BLOCK_FOR_ROLE, BLOCK_ORDER, FOCUS_MUSCLES, TEMPLATES } from "./templates.js";
-import type { Slot } from "./templates.js";
+import type { Slot, SlotRole } from "./templates.js";
 
 /** Soreness at or above this level takes a muscle out of the candidate pool. */
 const SORE_BLOCK_LEVEL = 2;
 
+/**
+ * Cap on exercises sharing one movement pattern when filling leftover time.
+ * The template itself may legitimately assign more (a push day is mostly
+ * pressing); this only governs the filler.
+ */
+const MAX_PER_PATTERN = 2;
+
 /** Rough seconds per rep, used only for time estimation. */
 const SECONDS_PER_REP = 3;
+
+/**
+ * How much of an exercise's nominal rest a slot actually needs. The value on
+ * the exercise assumes a hard loaded set; five bodyweight squats in a warm-up
+ * do not need three minutes. This scales the prescribed rest to the real
+ * demand, which fixes both the time estimate and the in-session rest timer.
+ */
+const REST_BY_ROLE: Record<SlotRole, number> = {
+  warmup: 0.35,
+  main: 1,
+  accessory: 0.7,
+  core: 0.6,
+  finisher: 0.5,
+};
+
+/** Unloaded work recovers faster than the same movement under load. */
+const UNLOADED_REST_FACTOR = 0.75;
+
+function restForSlot(exercise: Exercise, slot: Slot, sets: SetPrescription[]): number {
+  const loaded = (sets[0]?.weightKg ?? 0) > 0;
+  const scale = (REST_BY_ROLE[slot.role] ?? 1) * (loaded ? 1 : UNLOADED_REST_FACTOR);
+  return Math.max(15, Math.round((exercise.restSec * scale) / 5) * 5);
+}
 
 export interface PlannerInput {
   constraints: SessionConstraints;
@@ -78,8 +110,31 @@ export function buildPlan(input: PlannerInput): PlannerResult {
     );
   }
 
-  // Volume scaling from energy: 3 is neutral, 1 cuts a third, 5 adds a little.
-  const volumeScale = { 1: 0.6, 2: 0.8, 3: 1, 4: 1, 5: 1.1 }[constraints.energy] ?? 1;
+  const statedExperience = constraints.experience ?? "intermediate";
+
+  // Volume scaling from energy and experience: 3 is neutral, 1 cuts a third,
+  // 5 adds a little; an advanced lifter carries more of it.
+  const energyScale = { 1: 0.6, 2: 0.8, 3: 1, 4: 1, 5: 1.1 }[constraints.energy] ?? 1;
+
+  // Act on the last session's difficulty rating without spending a token.
+  //
+  // The lever here is intensity, not volume. The session has a fixed time
+  // budget, so adding sets cannot add work — it just crowds exercises out of
+  // the same 45 minutes. "Too easy" has to mean harder reps, less rest in
+  // reserve, and harder variations instead.
+  const lastRating = logs.find((l) => l.rating !== undefined)?.rating;
+  const { levelShift, rirDelta } = intensityAdjustment(lastRating);
+
+  const experience = shiftExperience(statedExperience, levelShift);
+  if (lastRating !== undefined && (levelShift !== 0 || rirDelta !== 0)) {
+    adaptations.push(
+      rirDelta < 0
+        ? "Pushed the intensity up — you said the last session was too easy."
+        : "Eased the intensity off — you said the last session was too hard.",
+    );
+  }
+
+  const volumeScale = energyScale * EXPERIENCE_PROFILE[experience].volumeScale;
   if (volumeScale < 1) {
     adaptations.push(`Cut volume to ${Math.round(volumeScale * 100)}% for low energy.`);
   }
@@ -115,6 +170,7 @@ export function buildPlan(input: PlannerInput): PlannerResult {
       underTrained,
       provenIds,
       energy: constraints.energy,
+      experience,
     });
     if (!exercise) continue;
     usedIds.add(exercise.id);
@@ -123,8 +179,9 @@ export function buildPlan(input: PlannerInput): PlannerResult {
     const sets = nextPrescription(exercise, state, {
       sets: slot.sets,
       repRange: slot.repRange,
-      rir: slot.rir,
+      rir: Math.max(0, slot.rir + rirDelta),
       volumeScale,
+      experience,
     });
     chosen.push({ slot, exercise, sets });
   }
@@ -140,10 +197,21 @@ export function buildPlan(input: PlannerInput): PlannerResult {
     ["core"],
   ];
 
+  /** How many exercises already use a given movement pattern. */
+  const patternCount = (pattern: Pattern) =>
+    chosen.filter((c) => c.exercise.pattern === pattern).length;
+
   for (let i = 0; i < fillerPatterns.length * 2; i++) {
     if (estimateMinutes(chosen) >= constraints.minutes * 0.85) break;
-    const patterns = fillerPatterns[i % fillerPatterns.length];
-    if (!patterns) continue;
+
+    // Take the least-represented pattern group each round. Cycling blindly
+    // let one pattern win repeatedly — an upper session ended up with four
+    // different push-up variations and no pulling at all.
+    const candidates = [...fillerPatterns]
+      .filter((group) => (group[0] ? patternCount(group[0]) < MAX_PER_PATTERN : false))
+      .sort((a, b) => patternCount(a[0] as Pattern) - patternCount(b[0] as Pattern));
+    const patterns = candidates[0];
+    if (!patterns) break;
     const focusMuscles = FOCUS_MUSCLES[focus];
     const slot: Slot = {
       role: "accessory",
@@ -163,6 +231,7 @@ export function buildPlan(input: PlannerInput): PlannerResult {
       underTrained,
       provenIds,
       energy: constraints.energy,
+      experience,
     });
     if (!exercise) continue;
     usedIds.add(exercise.id);
@@ -173,8 +242,9 @@ export function buildPlan(input: PlannerInput): PlannerResult {
       sets: nextPrescription(exercise, state, {
         sets: slot.sets,
         repRange: slot.repRange,
-        rir: slot.rir,
+        rir: Math.max(0, slot.rir + rirDelta),
         volumeScale,
+        experience,
       }),
     });
   }
@@ -185,6 +255,19 @@ export function buildPlan(input: PlannerInput): PlannerResult {
     adaptations.push(
       `Trimmed ${chosen.length - fitted.length} exercise(s) to fit ${constraints.minutes} minutes.`,
     );
+  }
+
+  // A session with pressing and no pulling is a real imbalance, and it is
+  // almost always the equipment's fault rather than a choice. Say so.
+  const patternsUsed = new Set(fitted.map((c) => c.exercise.pattern));
+  const pushes = patternsUsed.has("push_horizontal") || patternsUsed.has("push_vertical");
+  const pulls = patternsUsed.has("pull_horizontal") || patternsUsed.has("pull_vertical");
+  if (pushes && !pulls) {
+    adaptations.push(
+      "No pulling movements are possible with this equipment — add a pull-up bar, bands, or dumbbells with a bench to balance the session.",
+    );
+  } else if (pulls && !pushes) {
+    adaptations.push("No pressing movements are possible with this equipment.");
   }
 
   const blocks = toBlocks(fitted, recentIds, soreMuscles, injuries);
@@ -206,6 +289,35 @@ export function buildPlan(input: PlannerInput): PlannerResult {
   return { plan, adaptations };
 }
 
+/**
+ * Turns the last session's 1-5 difficulty rating into an intensity change:
+ * how many experience levels to shift, and how to move the reps-in-reserve
+ * target. Negative `rirDelta` means working closer to failure.
+ */
+function intensityAdjustment(rating: number | undefined): {
+  levelShift: number;
+  rirDelta: number;
+} {
+  switch (rating) {
+    case 1:
+      return { levelShift: 1, rirDelta: -1 }; // far too easy
+    case 2:
+      return { levelShift: 0, rirDelta: -1 }; // a bit easy
+    case 4:
+      return { levelShift: 0, rirDelta: 1 }; // hard
+    case 5:
+      return { levelShift: -1, rirDelta: 1 }; // too hard
+    default:
+      return { levelShift: 0, rirDelta: 0 };
+  }
+}
+
+function shiftExperience(current: Experience, shift: number): Experience {
+  const order: Experience[] = ["beginner", "intermediate", "advanced"];
+  const index = order.indexOf(current);
+  return order[Math.min(order.length - 1, Math.max(0, index + shift))] ?? current;
+}
+
 /* ----------------------------- selection ----------------------------- */
 
 interface PickArgs {
@@ -218,10 +330,11 @@ interface PickArgs {
   provenIds: Set<string>;
   /** Subjective readiness 1-5; low energy biases toward easier variations. */
   energy: number;
+  experience: Experience;
 }
 
 function pickForSlot(args: PickArgs): Exercise | undefined {
-  const { slot, pool, usedIds, recentIds, soreMuscles, underTrained, provenIds, energy } =
+  const { slot, pool, usedIds, recentIds, soreMuscles, underTrained, provenIds, energy, experience } =
     args;
 
   const scored = pool
@@ -263,17 +376,18 @@ function pickForSlot(args: PickArgs): Exercise | undefined {
       // specific constraints are what argue you off it.
       if (e.staple) score += 10;
 
-      // Aim at a difficulty appropriate to the slot rather than the hardest
-      // thing available: main work targets a solid intermediate variation,
-      // warmups and accessories stay simple. On a low-energy day, drop the
-      // target — a wrecked session is no time for a new hard variation.
-      const targetDifficulty = slot.role === "main" && energy >= 3 ? 2 : 1;
+      // Aim at a difficulty appropriate to the slot and the lifter rather than
+      // the hardest thing available. On a low-energy day, drop the target — a
+      // wrecked session is no time to attempt a new hard variation.
+      const ceiling = experience === "advanced" ? 3 : experience === "beginner" ? 1 : 2;
+      const targetDifficulty = slot.role === "main" && energy >= 3 ? ceiling : Math.max(1, ceiling - 1);
       score -= Math.abs(e.difficulty - targetDifficulty) * 9;
 
-      // An advanced variation the user has never logged is a guess. Prefer
-      // movements they have actually performed.
+      // An untried advanced variation is a guess, so prefer movements the user
+      // has actually performed — but do not hold an advanced lifter back from
+      // hard variations just because this app has not seen them do one yet.
       if (provenIds.has(e.id)) score += 12;
-      else if (e.difficulty === 3) score -= 14;
+      else if (e.difficulty === 3 && experience !== "advanced") score -= 14;
 
       return { exercise: e, score };
     })
@@ -323,15 +437,18 @@ function findUnderTrained(logs: WorkoutLog[]): Set<Muscle> {
 type Chosen = { slot: Slot; exercise: Exercise; sets: SetPrescription[] };
 
 function estimateExerciseSeconds(item: Chosen): number {
-  const { exercise, sets } = item;
-  let total = 0;
+  const { exercise, slot, sets } = item;
+  let work = 0;
   for (const set of sets) {
-    const work =
+    const seconds =
       set.seconds ??
       (set.metres ? set.metres * 1.5 : (set.reps ?? 10) * SECONDS_PER_REP);
-    total += (exercise.unilateral ? work * 2 : work) + exercise.restSec;
+    work += exercise.unilateral ? seconds * 2 : seconds;
   }
-  return total;
+  // Rest falls BETWEEN sets: four sets means three rests, not four. Charging
+  // one per set added a phantom rest to every exercise in the session.
+  const rests = Math.max(0, sets.length - 1) * restForSlot(exercise, slot, sets);
+  return work + rests;
 }
 
 export function estimateMinutes(items: Chosen[]): number {
@@ -416,7 +533,7 @@ function toBlocks(
       metric: item.exercise.metric,
       unilateral: item.exercise.unilateral,
       sets: item.sets,
-      restSec: item.exercise.restSec,
+      restSec: restForSlot(item.exercise, item.slot, item.sets),
       rationale: buildRationale(item, recentIds, soreMuscles, injuries),
     });
     byBlock.set(title, list);

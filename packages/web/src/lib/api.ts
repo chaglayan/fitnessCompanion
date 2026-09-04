@@ -99,6 +99,13 @@ export const api = {
       body: JSON.stringify(body),
     }),
   plan: (id: string) => request<WorkoutPlan>(`/plans/${id}`),
+
+  /** Applies free-text feedback to a plan; always costs an AI call. */
+  revisePlan: (id: string, feedback: string) =>
+    request<GeneratePlanResponse & { rejected?: string[] }>(`/plans/${id}/revise`, {
+      method: "POST",
+      body: JSON.stringify({ feedback }),
+    }),
   plans: () => request<WorkoutPlan[]>("/plans"),
 
   saveLog: (log: Omit<WorkoutLog, "id"> & { id?: string }) =>

@@ -13,7 +13,7 @@ import {
 } from "@fc/shared";
 import type { WorkoutLog } from "@fc/shared";
 import { activeModel, aiAvailable } from "./config.js";
-import { budgetStatus, chat, generateSession } from "./ai/coach.js";
+import { budgetStatus, chat, generateSession, revisePlan } from "./ai/coach.js";
 import type { Deps } from "./ai/coach.js";
 import { refreshDigest } from "./ai/digest.js";
 import { costWithoutCache } from "./ai/pricing.js";
@@ -149,6 +149,22 @@ export function createApi(getDeps: (c: { env: unknown }) => Deps): Hono {
         ...(noCache === undefined ? {} : { noCache }),
       }),
     );
+  });
+
+  app.post("/api/plans/:id/revise", async (c) => {
+    const deps = getDeps(c as unknown as { env: unknown });
+    const parsed = z
+      .object({ feedback: z.string().min(1).max(1000) })
+      .safeParse(await c.req.json().catch(() => undefined));
+
+    if (!parsed.success) {
+      return c.json({ error: "Tell me what to change.", detail: parsed.error.issues }, 400);
+    }
+    try {
+      return c.json(await revisePlan(deps, c.req.param("id"), parsed.data.feedback));
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 404);
+    }
   });
 
   app.get("/api/plans", async (c) => {

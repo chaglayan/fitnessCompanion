@@ -45,6 +45,26 @@ phone mid-rest.
 **Explains every exercise.** Tap any exercise name for how to do it, three
 form cues, and a link to a video demonstration.
 
+**Pitches it at the right level.** A beginner/intermediate/advanced setting
+decides where in the rep range you start, how close to failure you work, and
+how technical a variation you get. Without it the planner has no signal and
+defaults everyone to the easiest option.
+
+**Takes feedback, before and after.** Before you start, a box under the plan
+takes free text — *"too easy, push the squats harder"*, *"swap the burpees for
+something quieter"*, *"I've only got 20 minutes now"* — and the AI revises the
+session in place. After you finish, it asks how it went on a five-point scale
+plus an optional note.
+
+That rating is not decoration. The **planner itself** reads it and adjusts the
+next session's intensity with no AI call at all: rate a session "too easy" and
+the next one comes back with lower reps-in-reserve, harder variations, and a
+bumped experience level. The note goes into the training digest the model
+sees.
+
+Note the lever is intensity, not volume — the session has a fixed time budget,
+so adding sets would only crowd exercises out of the same 45 minutes.
+
 **Tracks progression.** Every logged set feeds an estimated 1RM and a double
 progression rule: work up the rep range at a fixed load, then add load and
 drop back down. Three sessions without improvement triggers a 10% deload.
