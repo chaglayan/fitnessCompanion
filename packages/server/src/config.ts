@@ -66,7 +66,12 @@ export function resolveConfig(source: EnvSource): Config {
     anthropicWorkspaceId: source["ANTHROPIC_WORKSPACE_ID"] ?? "",
     geminiApiKey: source["GEMINI_API_KEY"] ?? "",
 
-    model: source["AI_MODEL"] ?? "claude-opus-5",
+    // Sonnet 5 is the cost sweet spot for this workload. Note that a
+    // *cheaper* model is not automatically cheaper here: Haiku 4.5 requires a
+    // 4096-token prefix before it will cache, and this app's system prompt is
+    // ~2030, so it would silently never cache and end up costing more per call
+    // than Sonnet. Check the cache minimum before switching (see README).
+    model: source["AI_MODEL"] ?? "claude-sonnet-5",
     geminiModel: source["GEMINI_MODEL"] ?? "gemini-2.5-flash",
     planEffort: source["AI_PLAN_EFFORT"] ?? "low",
     chatEffort: source["AI_CHAT_EFFORT"] ?? "low",

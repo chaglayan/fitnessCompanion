@@ -89,23 +89,35 @@ When it *is* consulted, four things keep the call small:
 - **Low effort by default.** Planning is a well-specified structured task, so
   `AI_PLAN_EFFORT=low`. Raise it if sessions feel shallow.
 
-Rough cost of one AI-assisted session on `claude-opus-5`, from the measured
-prompt sizes above:
+Rough cost of one AI-assisted session on the default `claude-sonnet-5`, from
+the measured prompt sizes above:
 
 ```
-cached prefix   2,030 tok  ×  $0.50/M   =  $0.0010
-fresh input       210 tok  ×  $5.00/M   =  $0.0011
-output (patch)    150 tok  ×  $25.00/M  =  $0.0038
-                                           -------
-                                           ~$0.006
+cached prefix   2,030 tok  ×  $0.20/M   =  $0.00041
+fresh input       210 tok  ×  $2.00/M   =  $0.00042
+output (patch)    150 tok  ×  $10.00/M  =  $0.00150
+                                           --------
+                                           ~$0.0023   (~2,100 calls per $5)
 ```
 
 Same call without prompt caching would be about **2.5× more**; without the
 patch shape, about **5× more**. A session built by the planner alone is free.
 
-*(Token counts are estimated from prompt length, not measured with the
-tokenizer — treat them as the right order of magnitude. The **You** tab shows
-your real spend, from the token counts the API actually reports.)*
+**Picking a model — cheaper is not always cheaper.** Prompt caching has a
+minimum prefix length that varies *non-monotonically* by model, and a prompt
+below it silently never caches (no error — just full price on every token,
+every call). This app's system prompt is ~2,030 tokens:
+
+| Model | Cache minimum | Caches here? | Per call |
+|---|---:|---|---:|
+| Claude Opus 5 | 512 | yes | $0.0058 |
+| **Claude Sonnet 5** (default) | 1,024 | yes | **$0.0023** |
+| Claude Haiku 4.5 | 4,096 | **no** | $0.0030 |
+
+Haiku is the cheapest per token and the *second most expensive* per call,
+because it is the only one of the three that cannot cache this prompt. Check
+the cache minimum before switching `AI_MODEL`, and confirm afterwards that the
+**You** tab still shows a non-zero cache hit rate.
 
 Two safety nets:
 
@@ -201,7 +213,7 @@ ones worth knowing:
 |---|---|---|
 | `AUTH_TOKEN` | — | Shared secret. Required unless `ALLOW_NO_AUTH=true`. |
 | `ANTHROPIC_API_KEY` | — | Without it, sessions still work; chat doesn't. |
-| `AI_MODEL` | `claude-opus-5` | Any current model id. |
+| `AI_MODEL` | `claude-sonnet-5` | Any current model id — read the cache-minimum note above before changing. |
 | `AI_PLAN_EFFORT` | `low` | Thinking depth for planning. |
 | `AI_MONTHLY_BUDGET_USD` | `5` | Hard 30-day ceiling. `0` disables. |
 | `PLANNER_FIRST` | `true` | `false` routes every session through the model. |

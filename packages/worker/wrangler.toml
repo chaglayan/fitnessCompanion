@@ -19,7 +19,7 @@ database_id = "00000000-0000-0000-0000-000000000000"
 
 [vars]
 AI_PROVIDER = "anthropic"
-AI_MODEL = "claude-opus-5"
+AI_MODEL = "claude-sonnet-5"
 AI_PLAN_EFFORT = "low"
 AI_CHAT_EFFORT = "low"
 AI_MONTHLY_BUDGET_USD = "5"
