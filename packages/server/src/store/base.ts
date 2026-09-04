@@ -141,8 +141,9 @@ export function createStore(driver: Driver): Store {
     async recordUsage(record: UsageRecord) {
       await driver.run(
         `INSERT INTO usage (id, created_at, provider, model, purpose, input_tokens,
-                            cached_tokens, write_tokens, output_tokens, cost_usd, latency_ms)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                            cached_tokens, write_tokens, output_tokens, thinking_tokens,
+                            cost_usd, latency_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           record.id,
           record.createdAt,
@@ -153,6 +154,7 @@ export function createStore(driver: Driver): Store {
           record.cachedInputTokens,
           record.cacheWriteTokens,
           record.outputTokens,
+          record.thinkingTokens ?? 0,
           record.costUsd,
           record.latencyMs,
         ],
@@ -181,6 +183,7 @@ export function createStore(driver: Driver): Store {
         cachedInputTokens: r["cached_tokens"] as number,
         cacheWriteTokens: r["write_tokens"] as number,
         outputTokens: r["output_tokens"] as number,
+        thinkingTokens: (r["thinking_tokens"] as number | undefined) ?? 0,
         costUsd: r["cost_usd"] as number,
         latencyMs: r["latency_ms"] as number,
       }));

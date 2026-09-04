@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const { SCHEMA } = await import("@fc/server/store/schema");
+const { SCHEMA, MIGRATIONS } = await import("@fc/server/store/schema");
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const out = path.resolve(here, "../schema.sql");
@@ -19,6 +19,11 @@ const sql = [
   "-- Source: packages/server/src/store/schema.ts",
   "",
   ...SCHEMA.map((statement) => `${statement.trim()};`),
+  "",
+  "-- Migrations for databases created by an earlier version. These fail",
+  "-- harmlessly with \"duplicate column\" on a database built from the schema",
+  "-- above, which already includes them.",
+  ...MIGRATIONS.map((statement) => `${statement.trim()};`),
   "",
 ].join("\n");
 

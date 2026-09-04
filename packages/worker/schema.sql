@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS usage (
      cached_tokens INTEGER NOT NULL,
      write_tokens  INTEGER NOT NULL,
      output_tokens INTEGER NOT NULL,
+     thinking_tokens INTEGER NOT NULL DEFAULT 0,
      cost_usd      REAL NOT NULL,
      latency_ms    INTEGER NOT NULL
    );
@@ -55,3 +56,8 @@ CREATE TABLE IF NOT EXISTS kv (
      key   TEXT PRIMARY KEY,
      value TEXT NOT NULL
    );
+
+-- Migrations for databases created by an earlier version. These fail
+-- harmlessly with "duplicate column" on a database built from the schema
+-- above, which already includes them.
+ALTER TABLE usage ADD COLUMN thinking_tokens INTEGER NOT NULL DEFAULT 0;

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createStore } from "./base.js";
-import { SCHEMA } from "./schema.js";
+import { MIGRATIONS, SCHEMA } from "./schema.js";
 import type { Driver, Store } from "./types.js";
 
 /**
@@ -16,6 +16,18 @@ export function createSqliteStore(dbPath: string): Store {
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
   for (const statement of SCHEMA) db.exec(statement);
+
+  // CREATE TABLE IF NOT EXISTS will not add a column to a table that already
+  // exists, so bring older databases forward. Re-running is harmless: SQLite
+  // rejects a duplicate column and we ignore that specific failure.
+  for (const migration of MIGRATIONS) {
+    try {
+      db.exec(migration);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/duplicate column/i.test(message)) throw error;
+    }
+  }
 
   const driver: Driver = {
     async all<T>(sql: string, params: unknown[] = []) {

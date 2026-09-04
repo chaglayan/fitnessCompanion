@@ -45,6 +45,7 @@ export const SCHEMA: string[] = [
      cached_tokens INTEGER NOT NULL,
      write_tokens  INTEGER NOT NULL,
      output_tokens INTEGER NOT NULL,
+     thinking_tokens INTEGER NOT NULL DEFAULT 0,
      cost_usd      REAL NOT NULL,
      latency_ms    INTEGER NOT NULL
    )`,
@@ -69,4 +70,17 @@ export const SCHEMA: string[] = [
      key   TEXT PRIMARY KEY,
      value TEXT NOT NULL
    )`,
+];
+
+/**
+ * Applied after SCHEMA on the Node backend, which may be opening a database
+ * created by an earlier version. `CREATE TABLE IF NOT EXISTS` silently leaves
+ * an existing table alone, so new columns need adding explicitly. Each is
+ * safe to re-run — a duplicate column error is caught and ignored.
+ *
+ * On Cloudflare these are part of `npm run db:init -w @fc/worker`; an already
+ * deployed database needs them run once via `wrangler d1 execute`.
+ */
+export const MIGRATIONS: string[] = [
+  "ALTER TABLE usage ADD COLUMN thinking_tokens INTEGER NOT NULL DEFAULT 0",
 ];
