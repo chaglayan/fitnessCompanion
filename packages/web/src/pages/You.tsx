@@ -40,6 +40,17 @@ export function You() {
       .catch((e: Error) => setStatus(e.message));
   };
 
+  const switchModel = async (model: string) => {
+    setError(undefined);
+    try {
+      await api.saveSettings({ model });
+      setStatus(`Model switched to ${model}.`);
+      refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   const saveNotes = async () => {
     const lines = standingNotes
       .split("\n")
@@ -134,11 +145,25 @@ export function You() {
       <h2>AI usage</h2>
       {usage && server ? (
         <div className="card">
-          <div className="stat">
-            <span>Provider</span>
-            <span className="stat__value">
-              {server.provider} · {server.model}
-            </span>
+          <div className="field" style={{ marginBottom: 14 }}>
+            <label className="field__label">Model</label>
+            <div className="chips">
+              {server.selectableModels.map((m) => (
+                <button
+                  key={m.id}
+                  className="chip"
+                  aria-pressed={server.model === m.id}
+                  onClick={() => void switchModel(m.id)}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            <p className="faint" style={{ marginTop: 6 }}>
+              {server.selectableModels.find((m) => m.id === server.model)?.blurb ??
+                `Currently ${server.model}.`}{" "}
+              Applies to every device straight away.
+            </p>
           </div>
           <div className="stat">
             <span>Spent (30 days)</span>

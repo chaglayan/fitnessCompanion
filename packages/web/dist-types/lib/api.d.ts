@@ -33,6 +33,12 @@ export interface ServerSettings {
     provider: string;
     model: string;
     aiAvailable: boolean;
+    selectableModels: ReadonlyArray<{
+        id: string;
+        label: string;
+        blurb: string;
+        cacheMinTokens: number;
+    }>;
 }
 export declare class ApiError extends Error {
     readonly status: number;
@@ -79,6 +85,7 @@ export declare const api: {
         standingNotes?: string[];
         defaultEquipment?: string[];
         defaultMinutes?: number;
+        model?: string;
     }) => Promise<{
         ok: true;
     }>;

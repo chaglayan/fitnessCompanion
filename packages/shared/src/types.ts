@@ -317,6 +317,34 @@ export interface TrainingDigest {
   recentFeedback: string[];
 }
 
+/**
+ * Models offered in the UI. Each carries the minimum prompt prefix it will
+ * cache — below that a prompt silently caches nothing and costs far more per
+ * call, so the app checks this before offering a switch.
+ */
+export const SELECTABLE_MODELS = [
+  {
+    id: "claude-sonnet-5",
+    label: "Sonnet 5",
+    blurb: "Balanced. Best for detailed feedback.",
+    cacheMinTokens: 1024,
+  },
+  {
+    id: "claude-haiku-4-5",
+    label: "Haiku 4.5",
+    blurb: "Half the cost. Fine for simple tweaks.",
+    cacheMinTokens: 4096,
+  },
+  {
+    id: "claude-opus-5",
+    label: "Opus 5",
+    blurb: "Most capable, ~2.5x Sonnet.",
+    cacheMinTokens: 512,
+  },
+] as const;
+
+export type SelectableModelId = (typeof SELECTABLE_MODELS)[number]["id"];
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";

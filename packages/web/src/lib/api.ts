@@ -43,6 +43,12 @@ export interface ServerSettings {
   provider: string;
   model: string;
   aiAvailable: boolean;
+  selectableModels: ReadonlyArray<{
+    id: string;
+    label: string;
+    blurb: string;
+    cacheMinTokens: number;
+  }>;
 }
 
 export class ApiError extends Error {
@@ -143,6 +149,7 @@ export const api = {
     standingNotes?: string[];
     defaultEquipment?: string[];
     defaultMinutes?: number;
+    model?: string;
   }) => request<{ ok: true }>("/settings", { method: "PUT", body: JSON.stringify(body) }),
 };
 

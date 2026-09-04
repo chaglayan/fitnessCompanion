@@ -21,11 +21,21 @@ export interface Deps {
   provider?: AiProvider;
 }
 
-export function getProvider(deps: Deps): AiProvider {
+/**
+ * The model can be changed from the You tab without a redeploy, so the stored
+ * choice overrides the environment default. Everything else in the config
+ * still comes from the environment.
+ */
+export async function effectiveConfig(deps: Deps): Promise<Config> {
+  const chosen = await deps.store.kvGet<string>("ai_model");
+  return chosen ? { ...deps.config, model: chosen } : deps.config;
+}
+
+export function getProvider(deps: Deps, config: Config = deps.config): AiProvider {
   if (deps.provider) return deps.provider;
-  return deps.config.provider === "gemini"
-    ? new GeminiProvider(deps.config)
-    : new AnthropicProvider(deps.config);
+  return config.provider === "gemini"
+    ? new GeminiProvider(config)
+    : new AnthropicProvider(config);
 }
 
 /* ------------------------------ budget ------------------------------- */
@@ -148,7 +158,11 @@ export async function generateSession(
   }
 
   try {
-    const result = await getProvider(deps).patchPlan({ constraints, digest, draft });
+    const result = await getProvider(deps, await effectiveConfig(deps)).patchPlan({
+      constraints,
+      digest,
+      draft,
+    });
     await store.recordUsage(result.usage);
 
     const { plan, applied, rejected } = applyPatch(draft, result.data, constraints);
@@ -237,7 +251,7 @@ export async function revisePlan(
     };
   }
 
-  const result = await getProvider(deps).patchPlan({
+  const result = await getProvider(deps, await effectiveConfig(deps)).patchPlan({
     constraints: current.constraints,
     digest: await store.getDigest(),
     draft: current,
@@ -320,7 +334,7 @@ export async function chat(
   const plan = planId ? await store.getPlan(planId) : undefined;
 
   try {
-    const result = await getProvider(deps).chat({
+    const result = await getProvider(deps, await effectiveConfig(deps)).chat({
       history,
       message,
       digest: await store.getDigest(),

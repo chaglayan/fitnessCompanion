@@ -8,6 +8,7 @@ import {
   FOCUSES,
   INJURY_AREAS,
   MUSCLES,
+  SELECTABLE_MODELS,
   computeProgression,
   videoUrl,
 } from "@fc/shared";
@@ -74,6 +75,7 @@ const SettingsSchema = z.object({
   standingNotes: z.array(z.string().max(200)).max(20).optional(),
   defaultEquipment: z.array(z.enum(EQUIPMENT)).optional(),
   defaultMinutes: z.number().int().min(5).max(240).optional(),
+  model: z.enum(SELECTABLE_MODELS.map((m) => m.id) as [string, ...string[]]).optional(),
 });
 
 /** Compares two strings without leaking their difference through timing. */
@@ -359,8 +361,9 @@ export function createApi(getDeps: (c: { env: unknown }) => Deps): Hono {
       defaultEquipment: defaultEquipment ?? ["bodyweight"],
       defaultMinutes: defaultMinutes ?? 45,
       provider: config.provider,
-      model: activeModel(config),
+      model: (await store.kvGet<string>("ai_model")) ?? activeModel(config),
       aiAvailable: aiAvailable(config),
+      selectableModels: SELECTABLE_MODELS,
     });
   });
 
@@ -378,6 +381,7 @@ export function createApi(getDeps: (c: { env: unknown }) => Deps): Hono {
     }
     if (defaultEquipment) await store.kvSet("default_equipment", defaultEquipment);
     if (defaultMinutes) await store.kvSet("default_minutes", defaultMinutes);
+    if (parsed.data.model) await store.kvSet("ai_model", parsed.data.model);
     return c.json({ ok: true });
   });
 
