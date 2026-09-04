@@ -26,6 +26,7 @@ export interface Config {
 
   model: string;
   geminiModel: string;
+  thinking: "adaptive" | "disabled";
   planEffort: string;
   chatEffort: string;
 
@@ -73,7 +74,14 @@ export function resolveConfig(source: EnvSource): Config {
     // than Sonnet. Check the cache minimum before switching (see README).
     model: source["AI_MODEL"] ?? "claude-sonnet-5",
     geminiModel: source["GEMINI_MODEL"] ?? "gemini-2.5-flash",
-    planEffort: source["AI_PLAN_EFFORT"] ?? "low",
+    /**
+   * "adaptive" (default) or "disabled". Thinking is roughly half the output
+   * tokens on a patch call, and output is the dominant cost now that the
+   * prompt is cached — but it is also where the model reasons about injuries,
+   * so this is off-limits to guess at. Measured tradeoff is in the README.
+   */
+  thinking: source["AI_THINKING"] === "disabled" ? "disabled" : "adaptive",
+  planEffort: source["AI_PLAN_EFFORT"] ?? "low",
     chatEffort: source["AI_CHAT_EFFORT"] ?? "low",
 
     monthlyBudgetUsd: num(source, "AI_MONTHLY_BUDGET_USD", 5),

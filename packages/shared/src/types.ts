@@ -338,6 +338,8 @@ export interface UsageRecord {
   cachedInputTokens: number;
   cacheWriteTokens: number;
   outputTokens: number;
+  /** Portion of outputTokens spent on reasoning. Billed at the output rate. */
+  thinkingTokens?: number;
   costUsd: number;
   latencyMs: number;
 }

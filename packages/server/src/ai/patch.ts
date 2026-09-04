@@ -22,12 +22,12 @@ export const PlanPatchSchema = z.object({
           op: z.literal("swap"),
           exerciseId: z.string(),
           withExerciseId: z.string(),
-          reason: z.string(),
+          reason: z.string().max(140),
         }),
         z.object({
           op: z.literal("remove"),
           exerciseId: z.string(),
-          reason: z.string(),
+          reason: z.string().max(140),
         }),
         z.object({
           op: z.literal("add"),
@@ -36,7 +36,7 @@ export const PlanPatchSchema = z.object({
           sets: z.number().int().min(1).max(8),
           reps: z.number().int().min(1).max(100).optional(),
           seconds: z.number().int().min(5).max(600).optional(),
-          reason: z.string(),
+          reason: z.string().max(140),
         }),
         z.object({
           op: z.literal("adjust"),
@@ -45,7 +45,7 @@ export const PlanPatchSchema = z.object({
           reps: z.number().int().min(1).max(100).optional(),
           seconds: z.number().int().min(5).max(600).optional(),
           weightKg: z.number().min(0).max(500).optional(),
-          reason: z.string(),
+          reason: z.string().max(140),
         }),
       ]),
     )

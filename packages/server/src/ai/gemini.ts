@@ -4,7 +4,9 @@ import { computeCostUsd } from "./pricing.js";
 import { PlanPatchSchema } from "./patch.js";
 import type { PlanPatch } from "./patch.js";
 import {
-  SYSTEM_PROMPT,
+  CHAT_TASK,
+  PATCH_TASK,
+  SHARED_SYSTEM,
   renderConstraints,
   renderDigest,
   renderPlanDraft,
@@ -109,6 +111,7 @@ export class GeminiProvider implements AiProvider {
     json: boolean,
     maxOutputTokens: number,
   ): Promise<{ text: string; usage: UsageRecord }> {
+    const task = json ? PATCH_TASK : CHAT_TASK;
     if (!this.config.geminiApiKey) {
       throw new Error("Gemini provider called without an API key configured.");
     }
@@ -123,7 +126,7 @@ export class GeminiProvider implements AiProvider {
           "x-goog-api-key": this.config.geminiApiKey,
         },
         body: JSON.stringify({
-          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          system_instruction: { parts: [{ text: `${SHARED_SYSTEM}\n\n${task}` }] },
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: {
             maxOutputTokens,

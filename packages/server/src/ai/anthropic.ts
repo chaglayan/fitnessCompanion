@@ -6,7 +6,9 @@ import { computeCostUsd } from "./pricing.js";
 import { PlanPatchSchema } from "./patch.js";
 import type { PlanPatch } from "./patch.js";
 import {
-  SYSTEM_PROMPT,
+  CHAT_TASK,
+  PATCH_TASK,
+  SHARED_SYSTEM,
   renderConstraints,
   renderDigest,
   renderPlanDraft,
@@ -44,13 +46,17 @@ const FALLBACK_BETA = "server-side-fallback-2026-07-01";
  * it is billed at roughly a tenth of the input rate. A 1h TTL comfortably
  * spans a training session plus the chat around it.
  */
-const CACHED_SYSTEM: Anthropic.Beta.BetaTextBlockParam[] = [
-  {
-    type: "text",
-    text: SYSTEM_PROMPT,
-    cache_control: { type: "ephemeral", ttl: "1h" },
-  },
-];
+/**
+ * The cached prefix, plus a small task-specific block after it. Only the
+ * first block carries `cache_control`, so both call sites share one cache
+ * entry for the expensive part while getting instructions suited to their job.
+ */
+function systemFor(task: string): Anthropic.Beta.BetaTextBlockParam[] {
+  return [
+    { type: "text", text: SHARED_SYSTEM, cache_control: { type: "ephemeral", ttl: "1h" } },
+    { type: "text", text: task },
+  ];
+}
 
 type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -110,12 +116,13 @@ export class AnthropicProvider implements AiProvider {
       client.beta.messages.parse({
         model: this.config.model,
         max_tokens: 2048,
-        system: CACHED_SYSTEM,
+        system: systemFor(PATCH_TASK),
         messages: [{ role: "user", content: userContent }],
         output_config: {
           effort: effort(this.config.planEffort),
           format: zodOutputFormat(PlanPatchSchema),
         },
+        thinking: { type: this.config.thinking },
         ...extra,
       }),
     );
@@ -153,9 +160,10 @@ export class AnthropicProvider implements AiProvider {
       client.beta.messages.create({
         model: this.config.model,
         max_tokens: 1200,
-        system: CACHED_SYSTEM,
+        system: systemFor(CHAT_TASK),
         messages,
         output_config: { effort: effort(this.config.chatEffort) },
+        thinking: { type: this.config.thinking },
         ...extra,
       }),
     );
@@ -222,6 +230,9 @@ export class AnthropicProvider implements AiProvider {
       cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,
       outputTokens: response.usage.output_tokens,
     };
+    // Thinking is billed as output. Recording it separately is the only way
+    // to see where an unexpectedly expensive call actually went.
+    const thinkingTokens = response.usage.output_tokens_details?.thinking_tokens ?? 0;
     return {
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
@@ -231,6 +242,7 @@ export class AnthropicProvider implements AiProvider {
       model: response.model || this.config.model,
       purpose,
       ...tokens,
+      thinkingTokens,
       costUsd: computeCostUsd("anthropic", response.model || this.config.model, tokens),
       latencyMs,
     };

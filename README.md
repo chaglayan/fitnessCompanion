@@ -119,35 +119,45 @@ When it *is* consulted, four things keep the call small:
 - **Low effort by default.** Planning is a well-specified structured task, so
   `AI_PLAN_EFFORT=low`. Raise it if sessions feel shallow.
 
-Rough cost of one AI-assisted session on the default `claude-sonnet-5`, from
-the measured prompt sizes above:
+Measured cost of one AI-assisted session, from real calls (`node
+scripts/measure-cost.mjs` reproduces this):
 
-```
-cached prefix   2,030 tok  ×  $0.20/M   =  $0.00041
-fresh input       210 tok  ×  $2.00/M   =  $0.00042
-output (patch)    150 tok  ×  $10.00/M  =  $0.00150
-                                           --------
-                                           ~$0.0023   (~2,100 calls per $5)
-```
+| Model | Warm call | Cold call | Calls per $5 |
+|---|---:|---:|---:|
+| Claude Opus 5 | $0.0136 | $0.0417 | 367 |
+| **Claude Sonnet 5** (default) | **$0.0054** | $0.0167 | 919 |
+| Claude Haiku 4.5 | $0.0027 | $0.0083 | 1,838 |
 
-Same call without prompt caching would be about **2.5× more**; without the
-patch shape, about **5× more**. A session built by the planner alone is free.
+A *cold* call writes the prompt cache and happens roughly once per hour of
+use; every call after that is warm. Sessions with no free-text note never
+reach a model and cost nothing.
 
-**Picking a model — cheaper is not always cheaper.** Prompt caching has a
-minimum prefix length that varies *non-monotonically* by model, and a prompt
-below it silently never caches (no error — just full price on every token,
-every call). This app's system prompt is ~2,030 tokens:
+**Two things dominate, and neither is what you'd guess.**
 
-| Model | Cache minimum | Caches here? | Per call |
-|---|---:|---|---:|
-| Claude Opus 5 | 512 | yes | $0.0058 |
-| **Claude Sonnet 5** (default) | 1,024 | yes | **$0.0023** |
-| Claude Haiku 4.5 | 4,096 | **no** | $0.0030 |
+*Output tokens, not input.* Once the 4,893-token prefix is cached it costs
+about a fifth of a cent; the model's own output is most of the bill. Roughly
+half of that output is reasoning: `AI_THINKING=disabled` cuts a Sonnet call
+from $0.0054 to $0.0035 and produced the same operations in testing. It is
+left on by default because reasoning about injuries is exactly where it earns
+its keep — but the switch is there, and the **You** tab breaks out thinking
+tokens so you can see what they cost you.
 
-Haiku is the cheapest per token and the *second most expensive* per call,
-because it is the only one of the three that cannot cache this prompt. Check
-the cache minimum before switching `AI_MODEL`, and confirm afterwards that the
-**You** tab still shows a non-zero cache hit rate.
+*Whether the model can use the cache at all.* The minimum cacheable prefix
+varies by model and is not monotonic — 512 tokens on Opus 5, 1,024 on Sonnet
+5, 4,096 on Haiku 4.5. This app's prefix is 4,893, which clears all three,
+but Haiku has only ~19% headroom: trim the exercise catalog much and it drops
+below the line and silently stops caching, roughly doubling its cost per call
+with no error.
+
+> Measure the prefix with `cache_creation_input_tokens` from a real response,
+> **not** `messages.countTokens` — the latter cannot see the structured-output
+> schema, which is part of the cached prefix and worth ~1,200 tokens here. An
+> earlier version of this README estimated the prefix from character count,
+> got it 1.8x too low, and consequently recommended the wrong model.
+
+Switching model is one variable: `AI_MODEL` in `.env`, or the `[vars]` block
+in `wrangler.toml`. After changing it, check that the **You** tab still shows
+a non-zero cache hit rate.
 
 Two safety nets:
 
@@ -244,6 +254,7 @@ ones worth knowing:
 | `AUTH_TOKEN` | — | Shared secret. Required unless `ALLOW_NO_AUTH=true`. |
 | `ANTHROPIC_API_KEY` | — | Without it, sessions still work; chat doesn't. |
 | `AI_MODEL` | `claude-sonnet-5` | Any current model id — read the cache-minimum note above before changing. |
+| `AI_THINKING` | `adaptive` | `disabled` roughly halves output tokens. |
 | `AI_PLAN_EFFORT` | `low` | Thinking depth for planning. |
 | `AI_MONTHLY_BUDGET_USD` | `5` | Hard 30-day ceiling. `0` disables. |
 | `PLANNER_FIRST` | `true` | `false` routes every session through the model. |
