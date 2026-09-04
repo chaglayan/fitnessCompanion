@@ -25,6 +25,8 @@ export function App() {
   const [playing, setPlaying] = useState(false);
   /** Exercise id whose detail sheet is open. */
   const [detailId, setDetailId] = useState<string | undefined>();
+  /** Note from a free swap/remove, surfaced on the Today screen. */
+  const [adjustNote, setAdjustNote] = useState<string | undefined>();
 
   // Offer to resume a session that was interrupted (phone died, tab closed).
   const [resumable, setResumable] = useState<ActiveSession | undefined>(() =>
@@ -78,6 +80,7 @@ export function App() {
             onOpenExercise={setDetailId}
             resumable={resumable}
             onResume={() => setPlaying(true)}
+            adjustNote={adjustNote}
           />
         )}
         {tab === "history" && <History onOpenExercise={setDetailId} />}
@@ -102,7 +105,15 @@ export function App() {
       </nav>
 
       {detailId && (
-        <ExerciseSheet exerciseId={detailId} onClose={() => setDetailId(undefined)} />
+        <ExerciseSheet
+          exerciseId={detailId}
+          onClose={() => setDetailId(undefined)}
+          {...(tab === "today" && plan ? { planId: plan.id } : {})}
+          onPlanChanged={(next, note) => {
+            setPlan(next);
+            setAdjustNote(note);
+          }}
+        />
       )}
     </div>
   );

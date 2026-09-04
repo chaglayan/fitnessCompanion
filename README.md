@@ -50,11 +50,21 @@ decides where in the rep range you start, how close to failure you work, and
 how technical a variation you get. Without it the planner has no signal and
 defaults everyone to the easiest option.
 
-**Takes feedback, before and after.** Before you start, a box under the plan
-takes free text — *"too easy, push the squats harder"*, *"swap the burpees for
-something quieter"*, *"I've only got 20 minutes now"* — and the AI revises the
-session in place. After you finish, it asks how it went on a five-point scale
-plus an optional note.
+**Two ways to change a session, and only one of them costs anything.**
+
+*Free and instant* — **Harder**, **Easier**, **+15 min**, **−15 min**,
+**Different exercises**, and per-exercise **Swap** / **Remove** from the
+exercise sheet. These are deterministic: the planner already knows how to
+shift difficulty, move the clock, and pick another movement of the same
+pattern. No model, no tokens, no waiting.
+
+*The AI box* — for what the buttons cannot express. *"My left shoulder has
+been pinching on anything overhead for two weeks but it's fine on horizontal
+pressing — keep the volume but work around it, and give me something for the
+rotator cuff at the end."* That needs judgement, and costs about half a cent.
+
+After you finish, it asks how the session went on a five-point scale plus an
+optional note.
 
 That rating is not decoration. The **planner itself** reads it and adjusts the
 next session's intensity with no AI call at all: rate a session "too easy" and

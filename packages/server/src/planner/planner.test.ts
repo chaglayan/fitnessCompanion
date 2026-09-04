@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { EXERCISE_BY_ID, isAvailable } from "@fc/shared";
 import type { SessionConstraints, WorkoutLog } from "@fc/shared";
-import { buildPlan } from "./index.js";
+import { adjustPlan, buildPlan, removeExercise, swapExercise } from "./index.js";
 
 function constraints(overrides: Partial<SessionConstraints> = {}): SessionConstraints {
   return {
@@ -260,4 +260,112 @@ test("rest is charged between sets, not after the last one", () => {
     plan.estimatedMinutes <= 45,
     `estimate ${plan.estimatedMinutes} exceeds the 45 minute budget`,
   );
+});
+
+/* --------------------- free deterministic adjustments -------------------- */
+
+test("harder / easier shift difficulty without an AI call", () => {
+  const { plan } = buildPlan({
+    constraints: constraints({ equipment: ["bodyweight", "dumbbell"], experience: "beginner" }),
+    logs: [],
+  });
+
+  const harder = adjustPlan(plan, "harder", []);
+  assert.equal(harder.plan.constraints.experience, "intermediate");
+  assert.ok(averageRir(harder.plan) < averageRir(plan), "harder should reduce reps in reserve");
+
+  const easier = adjustPlan(harder.plan, "easier", []);
+  assert.equal(easier.plan.constraints.experience, "beginner");
+});
+
+test("harder at the ceiling explains itself instead of silently doing nothing", () => {
+  const { plan } = buildPlan({
+    constraints: constraints({ experience: "advanced" }),
+    logs: [],
+  });
+  const result = adjustPlan(plan, "harder", []);
+  assert.match(result.note, /hardest level/);
+});
+
+test("shorter and longer move the time budget and the plan with it", () => {
+  const { plan } = buildPlan({
+    constraints: constraints({ equipment: ["bodyweight", "dumbbell"], minutes: 45 }),
+    logs: [],
+  });
+
+  const shorter = adjustPlan(plan, "shorter", []);
+  assert.equal(shorter.plan.constraints.minutes, 30);
+  assert.ok(shorter.plan.estimatedMinutes <= 30);
+
+  const longer = adjustPlan(plan, "longer", []);
+  assert.equal(longer.plan.constraints.minutes, 60);
+  assert.ok(longer.plan.estimatedMinutes > shorter.plan.estimatedMinutes);
+});
+
+test("more_variety returns a genuinely different set of exercises", () => {
+  const { plan } = buildPlan({
+    constraints: constraints({ equipment: ["bodyweight", "dumbbell", "pullup_bar"] }),
+    logs: [],
+  });
+  const before = new Set(allExercises(plan).map((e) => e.exerciseId));
+  const after = new Set(allExercises(adjustPlan(plan, "more_variety", []).plan).map((e) => e.exerciseId));
+
+  const overlap = [...after].filter((id) => before.has(id));
+  assert.ok(
+    overlap.length < after.size,
+    `expected mostly new exercises, got ${overlap.length}/${after.size} repeats`,
+  );
+});
+
+test("swapping an exercise keeps the movement pattern and respects constraints", () => {
+  const { plan } = buildPlan({
+    constraints: constraints({ equipment: ["bodyweight", "dumbbell"], injuries: ["knee"] }),
+    logs: [],
+  });
+  const original = allExercises(plan)[2];
+  assert.ok(original);
+
+  const result = swapExercise(plan, original.exerciseId, []);
+  const replacement = allExercises(result.plan).find(
+    (e) => e.substitutedFor === original.name,
+  );
+
+  if (replacement) {
+    const before = EXERCISE_BY_ID.get(original.exerciseId);
+    const after = EXERCISE_BY_ID.get(replacement.exerciseId);
+    assert.ok(before && after);
+    assert.equal(after.pattern, before.pattern, "swap must keep the movement pattern");
+    assert.ok(isAvailable(after, ["bodyweight", "dumbbell"]), "swap must respect equipment");
+    assert.ok(!after.stresses.includes("knee"), "swap must respect injuries");
+  }
+});
+
+test("repeated swaps walk forward instead of returning the original", () => {
+  const { plan } = buildPlan({
+    constraints: constraints({ equipment: ["bodyweight", "dumbbell", "bench", "pullup_bar"] }),
+    logs: [],
+  });
+  const start = allExercises(plan).find((e) => e.metric === "reps");
+  assert.ok(start);
+
+  const first = swapExercise(plan, start.exerciseId, []);
+  const swapped = allExercises(first.plan).find((e) => e.substitutedFor === start.name);
+  if (!swapped) return; // no alternative available for this pattern
+
+  const second = swapExercise(first.plan, swapped.exerciseId, []);
+  const ids = allExercises(second.plan).map((e) => e.exerciseId);
+  assert.ok(
+    !ids.includes(start.exerciseId),
+    "a second swap must not bring back the exercise we swapped away from",
+  );
+});
+
+test("removing an exercise drops it and cleans up an empty block", () => {
+  const { plan } = buildPlan({ constraints: constraints(), logs: [] });
+  const victim = allExercises(plan)[0];
+  assert.ok(victim);
+
+  const result = removeExercise(plan, victim.exerciseId);
+  assert.ok(!allExercises(result.plan).some((e) => e.exerciseId === victim.exerciseId));
+  assert.ok(result.plan.blocks.every((b) => b.exercises.length > 0));
 });

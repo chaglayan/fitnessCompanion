@@ -59,6 +59,17 @@ const EXPERIENCE_OPTIONS: Array<{ id: Experience; label: string; hint: string }>
   { id: "advanced", label: "Advanced", hint: "Harder variations, closer to failure" },
 ];
 
+type QuickOp = "harder" | "easier" | "shorter" | "longer" | "more_variety";
+
+/** Deterministic tweaks the planner can make on its own, at no cost. */
+const QUICK_ADJUSTMENTS: Array<{ op: QuickOp; label: string }> = [
+  { op: "harder", label: "Harder" },
+  { op: "easier", label: "Easier" },
+  { op: "longer", label: "+15 min" },
+  { op: "shorter", label: "−15 min" },
+  { op: "more_variety", label: "Different exercises" },
+];
+
 const TIME_OPTIONS = [15, 20, 30, 45, 60, 75, 90];
 const ENERGY_LABELS = ["Wrecked", "Tired", "Normal", "Good", "Great"];
 
@@ -69,6 +80,8 @@ interface Props {
   onOpenExercise: (id: string) => void;
   resumable: ActiveSession | undefined;
   onResume: () => void;
+  /** Result of a swap or removal made from the exercise sheet. */
+  adjustNote?: string;
 }
 
 export function Today({
@@ -78,6 +91,7 @@ export function Today({
   onOpenExercise,
   resumable,
   onResume,
+  adjustNote,
 }: Props) {
   const stored = loadSettings();
   const [equipment, setEquipment] = useState<Equipment[]>(stored.defaultEquipment);
@@ -90,6 +104,8 @@ export function Today({
   const [notes, setNotes] = useState("");
   const [feedback, setFeedback] = useState("");
   const [revising, setRevising] = useState(false);
+  /** Which quick adjustment is in flight, if any. */
+  const [adjusting, setAdjusting] = useState<QuickOp | undefined>();
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -144,6 +160,21 @@ export function Today({
       setError((e as Error).message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const adjust = async (op: QuickOp) => {
+    if (!plan) return;
+    setAdjusting(op);
+    setError(undefined);
+    try {
+      const result = await api.adjustPlan(plan.id, { op });
+      onPlan(result.plan);
+      setRouting(result.routing);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setAdjusting(undefined);
     }
   };
 
@@ -327,19 +358,46 @@ export function Today({
         <>
           <h2>{plan.title}</h2>
           <p className="sub">{plan.summary}</p>
-          {routing && <div className="banner banner--info">{routing}</div>}
+          {(adjustNote ?? routing) && (
+            <div className="banner banner--info">{adjustNote ?? routing}</div>
+          )}
           <PlanView plan={plan} onOpenExercise={onOpenExercise} />
 
           <div className="card" style={{ marginTop: 14 }}>
+            <label className="field__label">Quick changes — instant and free</label>
+            <div className="chips">
+              {QUICK_ADJUSTMENTS.map((option) => (
+                <button
+                  key={option.op}
+                  className="chip"
+                  disabled={adjusting !== undefined}
+                  onClick={() => void adjust(option.op)}
+                >
+                  {adjusting === option.op ? <span className="spinner" /> : option.label}
+                </button>
+              ))}
+            </div>
+            <p className="faint" style={{ marginTop: 8, marginBottom: 0 }}>
+              To change one exercise, tap it above — you can swap or remove it
+              from there. Also free.
+            </p>
+          </div>
+
+          <div className="card">
             <label className="field__label" htmlFor="feedback">
-              Want it different? Say so before you start
+              Detailed feedback — ask the AI
             </label>
             <textarea
               id="feedback"
               value={feedback}
-              placeholder="e.g. too easy, push the squats harder&#10;swap the burpees for something quieter&#10;I've only got 20 minutes now"
+              placeholder={
+                "e.g. my left shoulder has been pinching on anything overhead " +
+                "for two weeks, but it's fine on horizontal pressing — keep the " +
+                "volume but work around it, and give me something for the rotator " +
+                "cuff at the end"
+              }
               onChange={(e) => setFeedback(e.target.value)}
-              style={{ minHeight: 68 }}
+              style={{ minHeight: 110 }}
             />
             <button
               className="btn"
@@ -350,8 +408,9 @@ export function Today({
               {revising ? <span className="spinner" /> : "Apply changes"}
             </button>
             <p className="faint" style={{ marginTop: 8, marginBottom: 0 }}>
-              This one asks the AI, so it costs a fraction of a cent. Changing
-              equipment or time above and rebuilding is free.
+              For anything the buttons above can't express — reasoning about
+              your shoulder, restructuring the session, specific lifts. Costs
+              about half a cent.
             </p>
           </div>
 

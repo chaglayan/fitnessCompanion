@@ -100,6 +100,18 @@ export const api = {
     }),
   plan: (id: string) => request<WorkoutPlan>(`/plans/${id}`),
 
+  /** Deterministic plan tweaks — instant, and free. */
+  adjustPlan: (
+    id: string,
+    body:
+      | { op: "harder" | "easier" | "shorter" | "longer" | "more_variety" }
+      | { op: "swap" | "remove"; exerciseId: string },
+  ) =>
+    request<GeneratePlanResponse>(`/plans/${id}/adjust`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   /** Applies free-text feedback to a plan; always costs an AI call. */
   revisePlan: (id: string, feedback: string) =>
     request<GeneratePlanResponse & { rejected?: string[] }>(`/plans/${id}/revise`, {

@@ -62,6 +62,8 @@ export interface PlannerInput {
   constraints: SessionConstraints;
   /** Recent logs, newest first. Used for progression and rotation. */
   logs: WorkoutLog[];
+  /** Exercise ids to avoid — used by the "different exercises" adjustment. */
+  excludeIds?: string[];
 }
 
 export interface PlannerResult {
@@ -77,6 +79,7 @@ export interface PlannerResult {
  */
 export function buildPlan(input: PlannerInput): PlannerResult {
   const { constraints, logs } = input;
+  const excluded = new Set(input.excludeIds ?? []);
   const adaptations: string[] = [];
   const equipment = constraints.equipment.length ? constraints.equipment : ["bodyweight" as const];
 
@@ -91,6 +94,7 @@ export function buildPlan(input: PlannerInput): PlannerResult {
   // Candidate pool: kit you have, nothing that loads an injured area.
   const excludedByInjury: string[] = [];
   const pool = EXERCISES.filter((e) => {
+    if (excluded.has(e.id)) return false;
     if (!isAvailable(e, equipment)) return false;
     if (e.stresses.some((area) => injuries.has(area))) {
       excludedByInjury.push(e.name);
@@ -201,52 +205,76 @@ export function buildPlan(input: PlannerInput): PlannerResult {
   const patternCount = (pattern: Pattern) =>
     chosen.filter((c) => c.exercise.pattern === pattern).length;
 
-  for (let i = 0; i < fillerPatterns.length * 2; i++) {
-    if (estimateMinutes(chosen) >= constraints.minutes * 0.85) break;
+  const target = constraints.minutes * 0.85;
 
-    // Take the least-represented pattern group each round. Cycling blindly
-    // let one pattern win repeatedly — an upper session ended up with four
-    // different push-up variations and no pulling at all.
-    const candidates = [...fillerPatterns]
-      .filter((group) => (group[0] ? patternCount(group[0]) < MAX_PER_PATTERN : false))
-      .sort((a, b) => patternCount(a[0] as Pattern) - patternCount(b[0] as Pattern));
-    const patterns = candidates[0];
-    if (!patterns) break;
-    const focusMuscles = FOCUS_MUSCLES[focus];
-    const slot: Slot = {
-      role: "accessory",
-      patterns,
-      sets: 3,
-      repRange: [8, 12],
-      rir: 2,
-      priority: 5,
-      ...(focusMuscles ? { muscles: focusMuscles } : {}),
-    };
-    const exercise = pickForSlot({
-      slot,
-      pool,
-      usedIds,
-      recentIds,
-      soreMuscles,
-      underTrained,
-      provenIds,
-      energy: constraints.energy,
-      experience,
-    });
-    if (!exercise) continue;
-    usedIds.add(exercise.id);
-    const state = computeProgression(exercise.id, exercise.name, logs);
-    chosen.push({
-      slot,
-      exercise,
-      sets: nextPrescription(exercise, state, {
-        sets: slot.sets,
-        repRange: slot.repRange,
-        rir: Math.max(0, slot.rir + rirDelta),
-        volumeScale,
+  /**
+   * Pattern groups that yielded no candidate. A group with nothing available
+   * — pulling with no bar, for instance — always sorts first as the
+   * least-represented, so without this it starves the loop: every iteration
+   * retries the empty pattern and no other group is ever reached.
+   */
+  const exhausted = new Set<string>();
+  const groupKey = (group: Pattern[]) => group.join("+");
+
+  // Fill in tiers, relaxing the per-pattern cap only once the balanced
+  // options are exhausted. A short session therefore stays varied, while a
+  // long one is allowed a third movement of a pattern rather than plateauing
+  // and silently ignoring the extra time.
+  // Relax by one only. Padding a session with a fourth variation of the same
+  // press is worse than finishing early — and when the shortfall is caused by
+  // missing equipment, the summary already says so and names the fix.
+  filler: for (let cap = MAX_PER_PATTERN; cap <= MAX_PER_PATTERN + 1; cap++) {
+    for (let i = 0; i < fillerPatterns.length * 2; i++) {
+      if (estimateMinutes(chosen) >= target) break filler;
+
+      // Take the least-represented pattern group each round. Cycling blindly
+      // let one pattern win repeatedly — an upper session ended up with four
+      // different push-up variations and no pulling at all.
+      const candidates = [...fillerPatterns]
+        .filter((group) => group[0] && !exhausted.has(groupKey(group)))
+        .filter((group) => (group[0] ? patternCount(group[0]) < cap : false))
+        .sort((a, b) => patternCount(a[0] as Pattern) - patternCount(b[0] as Pattern));
+      const patterns = candidates[0];
+      if (!patterns) break;
+      const focusMuscles = FOCUS_MUSCLES[focus];
+      const slot: Slot = {
+        role: "accessory",
+        patterns,
+        sets: 3,
+        repRange: [8, 12],
+        rir: 2,
+        priority: 5,
+        ...(focusMuscles ? { muscles: focusMuscles } : {}),
+      };
+      const exercise = pickForSlot({
+        slot,
+        pool,
+        usedIds,
+        recentIds,
+        soreMuscles,
+        underTrained,
+        provenIds,
+        energy: constraints.energy,
         experience,
-      }),
-    });
+      });
+      if (!exercise) {
+        exhausted.add(groupKey(patterns));
+        continue;
+      }
+      usedIds.add(exercise.id);
+      const state = computeProgression(exercise.id, exercise.name, logs);
+      chosen.push({
+        slot,
+        exercise,
+        sets: nextPrescription(exercise, state, {
+          sets: slot.sets,
+          repRange: slot.repRange,
+          rir: Math.max(0, slot.rir + rirDelta),
+          volumeScale,
+          experience,
+        }),
+      });
+    }
   }
 
   // Fit the time budget: trim when over, add working sets back when well under.
@@ -316,6 +344,171 @@ function shiftExperience(current: Experience, shift: number): Experience {
   const order: Experience[] = ["beginner", "intermediate", "advanced"];
   const index = order.indexOf(current);
   return order[Math.min(order.length - 1, Math.max(0, index + shift))] ?? current;
+}
+
+/* ---------------------------- adjustments ---------------------------- */
+
+/**
+ * Free, instant changes to a session. These are the adjustments that do not
+ * need judgement — shifting difficulty, changing the clock, rotating the
+ * exercise choices — so they cost nothing and happen without a round trip to
+ * a model. Nuanced requests still go to the AI revise path.
+ */
+export type AdjustOp =
+  | "harder"
+  | "easier"
+  | "shorter"
+  | "longer"
+  | "more_variety";
+
+const TIME_STEP_MIN = 15;
+
+export interface AdjustResult {
+  plan: WorkoutPlan;
+  /** One line describing what changed, for the UI. */
+  note: string;
+}
+
+export function adjustPlan(
+  plan: WorkoutPlan,
+  op: AdjustOp,
+  logs: WorkoutLog[],
+): AdjustResult {
+  const current = plan.constraints;
+  const level = current.experience ?? "intermediate";
+
+  switch (op) {
+    case "harder":
+    case "easier": {
+      const next = shiftExperience(level, op === "harder" ? 1 : -1);
+      if (next === level) {
+        return {
+          plan,
+          note:
+            op === "harder"
+              ? "Already at the hardest level — use the feedback box to push specific lifts."
+              : "Already at the easiest level — try shortening the session instead.",
+        };
+      }
+      const built = buildPlan({ constraints: { ...current, experience: next }, logs });
+      return { plan: built.plan, note: `Difficulty set to ${next}.` };
+    }
+
+    case "shorter":
+    case "longer": {
+      const delta = op === "shorter" ? -TIME_STEP_MIN : TIME_STEP_MIN;
+      const minutes = Math.min(180, Math.max(10, current.minutes + delta));
+      if (minutes === current.minutes) {
+        return { plan, note: `Already at ${current.minutes} minutes.` };
+      }
+      const built = buildPlan({ constraints: { ...current, minutes }, logs });
+      return { plan: built.plan, note: `Session is now ${minutes} minutes.` };
+    }
+
+    case "more_variety": {
+      // Rebuild while avoiding everything currently on the plan, so the user
+      // gets a genuinely different session rather than a reshuffle.
+      const excludeIds = plan.blocks
+        .flatMap((b) => b.exercises)
+        .filter((e) => e.metric !== "time" || e.rationale.indexOf("Opens up") === -1)
+        .map((e) => e.exerciseId);
+      const built = buildPlan({ constraints: current, logs, excludeIds });
+      return { plan: built.plan, note: "Swapped in a different set of exercises." };
+    }
+  }
+}
+
+/**
+ * Replaces one exercise with the next best alternative for the same movement
+ * pattern, respecting equipment, injuries and soreness. Free — no AI call.
+ */
+export function swapExercise(
+  plan: WorkoutPlan,
+  exerciseId: string,
+  logs: WorkoutLog[],
+): AdjustResult {
+  const constraints = plan.constraints;
+  const equipment = constraints.equipment.length
+    ? constraints.equipment
+    : ["bodyweight" as const];
+  const injuries = new Set(constraints.injuries);
+  const soreMuscles = new Set<Muscle>(
+    constraints.soreness.filter((s) => s.level >= SORE_BLOCK_LEVEL).map((s) => s.muscle),
+  );
+
+  const next: WorkoutPlan = structuredClone(plan);
+  let target: PlannedExercise | undefined;
+  for (const block of next.blocks) {
+    const found = block.exercises.find((e) => e.exerciseId === exerciseId);
+    if (found) {
+      target = found;
+      break;
+    }
+  }
+  if (!target) return { plan, note: "That exercise is not in this session." };
+
+  const currentExercise = EXERCISE_BY_ID.get(exerciseId);
+  if (!currentExercise) return { plan, note: "Unknown exercise." };
+
+  // Everything already tried in this slot, plus everything else in the session.
+  const seen = new Set<string>([
+    exerciseId,
+    ...(target.previousIds ?? []),
+    ...next.blocks.flatMap((b) => b.exercises.map((e) => e.exerciseId)),
+  ]);
+
+  const candidates = EXERCISES.filter(
+    (e) =>
+      !seen.has(e.id) &&
+      e.pattern === currentExercise.pattern &&
+      isAvailable(e, equipment) &&
+      !e.stresses.some((area) => injuries.has(area)) &&
+      !e.primary.some((m) => soreMuscles.has(m)),
+  ).sort((a, b) => Number(b.staple) - Number(a.staple) || a.id.localeCompare(b.id));
+
+  const replacement = candidates[0];
+  if (!replacement) {
+    return {
+      plan,
+      note: `No other ${currentExercise.pattern.replace(/_/g, " ")} movement fits your equipment and constraints.`,
+    };
+  }
+
+  const state = computeProgression(replacement.id, replacement.name, logs);
+  const sets = nextPrescription(replacement, state, {
+    sets: target.sets.length,
+    repRange: [8, 12],
+    rir: target.sets[0]?.rir ?? 2,
+    experience: constraints.experience ?? "intermediate",
+  });
+
+  target.exerciseId = replacement.id;
+  target.name = replacement.name;
+  target.metric = replacement.metric;
+  target.unilateral = replacement.unilateral;
+  target.sets = sets;
+  target.restSec = replacement.restSec;
+  target.rationale = `Swapped in for ${currentExercise.name}.`;
+  target.substitutedFor = currentExercise.name;
+  target.previousIds = [...(target.previousIds ?? []), exerciseId];
+
+  return { plan: next, note: `${currentExercise.name} → ${replacement.name}.` };
+}
+
+/** Drops one exercise from a session. */
+export function removeExercise(plan: WorkoutPlan, exerciseId: string): AdjustResult {
+  const next: WorkoutPlan = structuredClone(plan);
+  let name = exerciseId;
+  for (const block of next.blocks) {
+    const index = block.exercises.findIndex((e) => e.exerciseId === exerciseId);
+    if (index >= 0) {
+      name = block.exercises[index]?.name ?? exerciseId;
+      block.exercises.splice(index, 1);
+      break;
+    }
+  }
+  next.blocks = next.blocks.filter((b) => b.exercises.length > 0);
+  return { plan: next, note: `Removed ${name}.` };
 }
 
 /* ----------------------------- selection ----------------------------- */

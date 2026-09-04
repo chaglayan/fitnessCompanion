@@ -1,16 +1,24 @@
 import { useEffect, useState } from "react";
+import type { WorkoutPlan } from "@fc/shared";
 import { api } from "../lib/api.js";
 import type { ExerciseDetail } from "../lib/api.js";
 
 interface Props {
   exerciseId: string;
   onClose: () => void;
+  /**
+   * Present when the sheet was opened from a session that has not started.
+   * Enables the free swap/remove actions.
+   */
+  planId?: string;
+  onPlanChanged?: (plan: WorkoutPlan, note: string) => void;
 }
 
 /** Cached across opens so re-tapping an exercise is instant and offline-safe. */
 const cache = new Map<string, ExerciseDetail>();
 
-export function ExerciseSheet({ exerciseId, onClose }: Props) {
+export function ExerciseSheet({ exerciseId, onClose, planId, onPlanChanged }: Props) {
+  const [busy, setBusy] = useState<"swap" | "remove" | undefined>();
   const [exercise, setExercise] = useState<ExerciseDetail | undefined>(() =>
     cache.get(exerciseId),
   );
@@ -44,6 +52,21 @@ export function ExerciseSheet({ exerciseId, onClose }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const act = async (op: "swap" | "remove") => {
+    if (!planId || !onPlanChanged) return;
+    setBusy(op);
+    setError(undefined);
+    try {
+      const result = await api.adjustPlan(planId, { op, exerciseId });
+      onPlanChanged(result.plan, result.routing);
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(undefined);
+    }
+  };
 
   return (
     <div
@@ -95,6 +118,30 @@ export function ExerciseSheet({ exerciseId, onClose }: Props) {
                 </span>
               ))}
             </div>
+
+            {planId && onPlanChanged && (
+              <>
+                <div className="row" style={{ marginBottom: 6 }}>
+                  <button
+                    className="btn grow"
+                    disabled={busy !== undefined}
+                    onClick={() => void act("swap")}
+                  >
+                    {busy === "swap" ? <span className="spinner" /> : "Swap exercise"}
+                  </button>
+                  <button
+                    className="btn btn--danger grow"
+                    disabled={busy !== undefined}
+                    onClick={() => void act("remove")}
+                  >
+                    {busy === "remove" ? <span className="spinner" /> : "Remove"}
+                  </button>
+                </div>
+                <p className="faint" style={{ marginBottom: 14, textAlign: "center" }}>
+                  Instant and free — no AI call.
+                </p>
+              </>
+            )}
 
             <a
               className="btn btn--primary"

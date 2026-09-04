@@ -197,6 +197,11 @@ export interface PlannedExercise {
   rationale: string;
   /** Set when the exercise replaced a default pick (injury, soreness, kit). */
   substitutedFor?: string;
+  /**
+   * Exercise ids previously shown in this slot. Repeated swaps walk forward
+   * through the alternatives instead of bouncing back to the first one.
+   */
+  previousIds?: string[];
 }
 
 export interface WorkoutBlock {

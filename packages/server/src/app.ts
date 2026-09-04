@@ -14,6 +14,7 @@ import {
 import type { WorkoutLog } from "@fc/shared";
 import { activeModel, aiAvailable } from "./config.js";
 import { budgetStatus, chat, generateSession, revisePlan } from "./ai/coach.js";
+import { adjustPlan, removeExercise, swapExercise } from "./planner/index.js";
 import type { Deps } from "./ai/coach.js";
 import { refreshDigest } from "./ai/digest.js";
 import { costWithoutCache } from "./ai/pricing.js";
@@ -149,6 +150,41 @@ export function createApi(getDeps: (c: { env: unknown }) => Deps): Hono {
         ...(noCache === undefined ? {} : { noCache }),
       }),
     );
+  });
+
+  /**
+   * Free, instant plan changes. Everything here is deterministic — no model
+   * call, no tokens — which is why it is a separate endpoint from /revise.
+   */
+  app.post("/api/plans/:id/adjust", async (c) => {
+    const { store } = getDeps(c as unknown as { env: unknown });
+    const parsed = z
+      .discriminatedUnion("op", [
+        z.object({
+          op: z.enum(["harder", "easier", "shorter", "longer", "more_variety"]),
+        }),
+        z.object({ op: z.enum(["swap", "remove"]), exerciseId: z.string().min(1) }),
+      ])
+      .safeParse(await c.req.json().catch(() => undefined));
+
+    if (!parsed.success) {
+      return c.json({ error: "Unknown adjustment.", detail: parsed.error.issues }, 400);
+    }
+
+    const current = await store.getPlan(c.req.param("id"));
+    if (!current) return c.json({ error: "That session no longer exists." }, 404);
+
+    const logs = await store.listLogs(40);
+    const body = parsed.data;
+    const result =
+      body.op === "swap"
+        ? swapExercise(current, body.exerciseId, logs)
+        : body.op === "remove"
+          ? removeExercise(current, body.exerciseId)
+          : adjustPlan(current, body.op, logs);
+
+    await store.savePlan(result.plan);
+    return c.json({ plan: result.plan, routing: `${result.note} (free — no AI call)` });
   });
 
   app.post("/api/plans/:id/revise", async (c) => {
