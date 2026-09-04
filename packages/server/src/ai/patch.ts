@@ -22,12 +22,12 @@ export const PlanPatchSchema = z.object({
           op: z.literal("swap"),
           exerciseId: z.string(),
           withExerciseId: z.string(),
-          reason: z.string().max(140),
+          reason: z.string(),
         }),
         z.object({
           op: z.literal("remove"),
           exerciseId: z.string(),
-          reason: z.string().max(140),
+          reason: z.string(),
         }),
         z.object({
           op: z.literal("add"),
@@ -36,7 +36,7 @@ export const PlanPatchSchema = z.object({
           sets: z.number().int().min(1).max(8),
           reps: z.number().int().min(1).max(100).optional(),
           seconds: z.number().int().min(5).max(600).optional(),
-          reason: z.string().max(140),
+          reason: z.string(),
         }),
         z.object({
           op: z.literal("adjust"),
@@ -45,7 +45,7 @@ export const PlanPatchSchema = z.object({
           reps: z.number().int().min(1).max(100).optional(),
           seconds: z.number().int().min(5).max(600).optional(),
           weightKg: z.number().min(0).max(500).optional(),
-          reason: z.string().max(140),
+          reason: z.string(),
         }),
       ]),
     )
@@ -53,6 +53,22 @@ export const PlanPatchSchema = z.object({
 });
 
 export type PlanPatch = z.infer<typeof PlanPatchSchema>;
+
+/**
+ * Reasons are shown in a one-line banner and billed at the output rate, so
+ * they want to be short — but enforcing that in the schema made an over-long
+ * reason fail the entire parse and lose a paid call. The prompt asks for
+ * brevity; this trims anything that ignores it.
+ */
+const MAX_REASON_CHARS = 160;
+
+function trimReason(reason: string): string {
+  const clean = reason.trim();
+  if (clean.length <= MAX_REASON_CHARS) return clean;
+  const cut = clean.slice(0, MAX_REASON_CHARS);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > 100 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}
 
 export interface ApplyResult {
   plan: WorkoutPlan;
@@ -134,10 +150,10 @@ export function applyPatch(
           // Carry the prescription across; metric changes are normalised below.
           sets: normaliseSets(target.entry, replacement),
           restSec: replacement.restSec,
-          rationale: op.reason,
+          rationale: trimReason(op.reason),
           substitutedFor: target.entry.name,
         };
-        applied.push(`Swapped ${target.entry.name} for ${replacement.name} — ${op.reason}`);
+        applied.push(`Swapped ${target.entry.name} for ${replacement.name} — ${trimReason(op.reason)}`);
         break;
       }
 
@@ -150,7 +166,7 @@ export function applyPatch(
         const block = next.blocks[target.blockIndex];
         if (!block) break;
         block.exercises.splice(target.index, 1);
-        applied.push(`Removed ${target.entry.name} — ${op.reason}`);
+        applied.push(`Removed ${target.entry.name} — ${trimReason(op.reason)}`);
         break;
       }
 
@@ -178,9 +194,9 @@ export function applyPatch(
           unilateral: exercise.unilateral,
           sets: Array.from({ length: setCount }, () => ({ ...prescription })),
           restSec: exercise.restSec,
-          rationale: op.reason,
+          rationale: trimReason(op.reason),
         });
-        applied.push(`Added ${exercise.name} — ${op.reason}`);
+        applied.push(`Added ${exercise.name} — ${trimReason(op.reason)}`);
         break;
       }
 
@@ -202,8 +218,8 @@ export function applyPatch(
           if (op.seconds !== undefined && entry.metric === "time") set.seconds = op.seconds;
           if (op.weightKg !== undefined) set.weightKg = op.weightKg;
         }
-        entry.rationale = op.reason;
-        applied.push(`Adjusted ${entry.name} — ${op.reason}`);
+        entry.rationale = trimReason(op.reason);
+        applied.push(`Adjusted ${entry.name} — ${trimReason(op.reason)}`);
         break;
       }
     }

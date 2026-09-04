@@ -119,45 +119,44 @@ When it *is* consulted, four things keep the call small:
 - **Low effort by default.** Planning is a well-specified structured task, so
   `AI_PLAN_EFFORT=low`. Raise it if sessions feel shallow.
 
-Measured cost of one AI-assisted session, from real calls (`node
-scripts/measure-cost.mjs` reproduces this):
+Measured cost of one AI-assisted session — **observed on real calls**, two
+runs per model, with the app's actual request shape:
 
-| Model | Warm call | Cold call | Calls per $5 |
-|---|---:|---:|---:|
-| Claude Opus 5 | $0.0136 | $0.0417 | 367 |
-| **Claude Sonnet 5** (default) | **$0.0054** | $0.0167 | 919 |
-| Claude Haiku 4.5 | $0.0027 | $0.0083 | 1,838 |
+| Model | Cold call | Warm call | Used the cache? |
+|---|---:|---:|---|
+| Claude Opus 5 | $0.0380 | $0.0107 | yes |
+| **Claude Sonnet 5** (default) | $0.0173 | **$0.0074** | yes |
+| Claude Haiku 4.5 | $0.0218 | $0.0215 | **no** |
 
-A *cold* call writes the prompt cache and happens roughly once per hour of
-use; every call after that is warm. Sessions with no free-text note never
-reach a model and cost nothing.
+A *cold* call writes the prompt cache and happens about once an hour of use;
+every call after is warm. Sessions with no free-text note never reach a model
+and cost nothing.
 
-**Two things dominate, and neither is what you'd guess.**
+**Haiku is the cheapest per token and the most expensive per call here**,
+because in testing it never registered a cache read — its `cached` count
+stayed at zero across repeated calls while Sonnet and Opus both hit ~4,700.
+Haiku's documented cache minimum is 4,096 tokens and this app's prefix is
+~4,800, so it ought to clear it; the app also has to omit `effort` and
+`thinking` for Haiku, which changes the request shape. I have not established
+which of those is responsible. Treat the table as the measurement it is, and
+re-measure before switching.
 
-*Output tokens, not input.* Once the 4,893-token prefix is cached it costs
-about a fifth of a cent; the model's own output is most of the bill. Roughly
-half of that output is reasoning: `AI_THINKING=disabled` cuts a Sonnet call
-from $0.0054 to $0.0035 and produced the same operations in testing. It is
-left on by default because reasoning about injuries is exactly where it earns
-its keep — but the switch is there, and the **You** tab breaks out thinking
-tokens so you can see what they cost you.
+**Output, not input, is most of the bill** once the prefix is cached, and
+roughly half the output is reasoning. `AI_THINKING=disabled` cuts a Sonnet
+call by about a third and produced the same operations in testing. It stays on
+by default because reasoning about injuries is where it earns its keep; the
+**You** tab breaks out thinking tokens so you can judge for yourself.
 
-*Whether the model can use the cache at all.* The minimum cacheable prefix
-varies by model and is not monotonic — 512 tokens on Opus 5, 1,024 on Sonnet
-5, 4,096 on Haiku 4.5. This app's prefix is 4,893, which clears all three,
-but Haiku has only ~19% headroom: trim the exercise catalog much and it drops
-below the line and silently stops caching, roughly doubling its cost per call
-with no error.
+**Model choice is switchable from the You tab** and applies to every device at
+once — no redeploy. After switching, check the cache hit rate there: a model
+that stops caching roughly triples the per-call cost with no error.
 
-> Measure the prefix with `cache_creation_input_tokens` from a real response,
-> **not** `messages.countTokens` — the latter cannot see the structured-output
-> schema, which is part of the cached prefix and worth ~1,200 tokens here. An
-> earlier version of this README estimated the prefix from character count,
-> got it 1.8x too low, and consequently recommended the wrong model.
-
-Switching model is one variable: `AI_MODEL` in `.env`, or the `[vars]` block
-in `wrangler.toml`. After changing it, check that the **You** tab still shows
-a non-zero cache hit rate.
+> Two cautions learned the hard way. Measure the prefix with
+> `cache_creation_input_tokens` from a real response, **not**
+> `messages.countTokens` — the latter misses the structured-output schema,
+> ~1,200 tokens here. And not every model accepts every parameter: Haiku 4.5
+> rejects both `effort` and adaptive `thinking` outright, which fails the
+> whole call, so the app omits them per model.
 
 Two safety nets:
 

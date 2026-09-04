@@ -326,24 +326,49 @@ export const SELECTABLE_MODELS = [
   {
     id: "claude-sonnet-5",
     label: "Sonnet 5",
-    blurb: "Balanced. Best for detailed feedback.",
+    blurb: "Balanced, and the cheapest per call in testing. Recommended.",
     cacheMinTokens: 1024,
+    supportsAdaptiveThinking: true,
+    supportsEffort: true,
   },
   {
     id: "claude-haiku-4-5",
     label: "Haiku 4.5",
-    blurb: "Half the cost. Fine for simple tweaks.",
+    blurb: "Cheapest per token, but did not use the prompt cache in testing — measured ~3x Sonnet per call.",
     cacheMinTokens: 4096,
+    // Haiku 4.5 rejects both adaptive thinking and the effort parameter;
+    // sending either 400s the whole call.
+    supportsAdaptiveThinking: false,
+    supportsEffort: false,
   },
   {
     id: "claude-opus-5",
     label: "Opus 5",
-    blurb: "Most capable, ~2.5x Sonnet.",
+    blurb: "Most capable. Caches well; ~1.5x Sonnet per call.",
     cacheMinTokens: 512,
+    supportsAdaptiveThinking: true,
+    supportsEffort: true,
   },
 ] as const;
 
 export type SelectableModelId = (typeof SELECTABLE_MODELS)[number]["id"];
+
+/**
+ * Whether a model accepts `thinking: {type: "adaptive"}`. Not every model
+ * does, and sending it to one that doesn't fails the whole request — which
+ * would silently drop the app back to planner-only sessions.
+ */
+export function supportsAdaptiveThinking(model: string): boolean {
+  const known = SELECTABLE_MODELS.find((m) => m.id === model);
+  // Unknown models are assumed not to support it: a missing thinking
+  // parameter costs a little quality, sending an invalid one costs the call.
+  return known?.supportsAdaptiveThinking ?? false;
+}
+
+/** Whether a model accepts `output_config.effort`. Same failure mode. */
+export function supportsEffort(model: string): boolean {
+  return SELECTABLE_MODELS.find((m) => m.id === model)?.supportsEffort ?? false;
+}
 
 export interface ChatMessage {
   id: string;

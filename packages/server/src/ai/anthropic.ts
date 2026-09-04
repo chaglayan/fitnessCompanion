@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { supportsAdaptiveThinking, supportsEffort } from "@fc/shared";
 import type { UsageRecord } from "@fc/shared";
 import type { Config } from "../config.js";
 import { computeCostUsd } from "./pricing.js";
@@ -119,10 +120,10 @@ export class AnthropicProvider implements AiProvider {
         system: systemFor(PATCH_TASK),
         messages: [{ role: "user", content: userContent }],
         output_config: {
-          effort: effort(this.config.planEffort),
+          ...this.effortParam(this.config.planEffort),
           format: zodOutputFormat(PlanPatchSchema),
         },
-        thinking: { type: this.config.thinking },
+        ...this.thinkingParam(),
         ...extra,
       }),
     );
@@ -162,8 +163,8 @@ export class AnthropicProvider implements AiProvider {
         max_tokens: 1200,
         system: systemFor(CHAT_TASK),
         messages,
-        output_config: { effort: effort(this.config.chatEffort) },
-        thinking: { type: this.config.thinking },
+        output_config: { ...this.effortParam(this.config.chatEffort) },
+        ...this.thinkingParam(),
         ...extra,
       }),
     );
@@ -210,6 +211,22 @@ export class AnthropicProvider implements AiProvider {
       }
       throw error;
     }
+  }
+
+  /**
+   * Omitted entirely for models that reject adaptive thinking, and when the
+   * user has turned it off. Sending an unsupported value fails the request.
+   */
+  private thinkingParam(): { thinking?: { type: "adaptive" | "disabled" } } {
+    if (this.config.thinking === "disabled") return { thinking: { type: "disabled" } };
+    return supportsAdaptiveThinking(this.config.model)
+      ? { thinking: { type: "adaptive" } }
+      : {};
+  }
+
+  /** Omitted for models that reject it, which fails the whole request. */
+  private effortParam(value: string): { effort?: Effort } {
+    return supportsEffort(this.config.model) ? { effort: effort(value) } : {};
   }
 
   private requireClient(): Anthropic {
